@@ -15,7 +15,9 @@ const PRESETS = [
 ];
 
 // ---------------- Map ----------------
-const map = L.map('map', { zoomControl: true, preferCanvas: true }).setView([0.3, 36.5], 6);
+const map = L.map('map', { zoomControl: false, preferCanvas: true }).setView([0.3, 36.5], 6);
+L.control.zoom({ position: 'bottomright' }).addTo(map);
+const ACCENT = '#0071e3';
 const bases = {
   'OpenStreetMap': L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
@@ -28,8 +30,27 @@ const bases = {
   }),
 };
 bases['OpenStreetMap'].addTo(map);
-L.control.layers(bases, null, { position: 'topright' }).addTo(map);
-L.control.scale({ imperial: false }).addTo(map);
+L.control.scale({ imperial: false, position: 'bottomleft' }).addTo(map);
+$$('input[name=basemap]').forEach((r) => r.addEventListener('change', () => {
+  for (const [k, layer] of Object.entries(bases)) {
+    if (k === r.value) layer.addTo(map); else layer.remove();
+  }
+}));
+
+// Layers popover
+const layersBtn = $('#btnLayers'), layersPop = $('#layersPop');
+function toggleLayers(open = layersPop.hidden) {
+  layersPop.hidden = !open;
+  layersBtn.setAttribute('aria-expanded', open);
+}
+layersBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleLayers(); });
+document.addEventListener('click', (e) => { if (!layersPop.hidden && !e.target.closest('.mapctl')) toggleLayers(false); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { toggleLayers(false); $('#searchResults').hidden = true; } });
+L.DomEvent.disableClickPropagation($('.mapctl'));
+L.DomEvent.disableScrollPropagation(layersPop);
+
+// Phone bottom sheet
+$('#btnSheet').addEventListener('click', () => $('#panel').classList.toggle('collapsed'));
 map.attributionControl.addAttribution('Elevation: <a href="https://registry.opendata.aws/terrain-tiles/">AWS Terrain Tiles</a>');
 
 // Rasters live in their own pane beneath vectors so streams and markers stay visible and clickable.
@@ -37,7 +58,33 @@ map.createPane('rasters');
 map.getPane('rasters').style.zIndex = 350;
 map.getPane('rasters').style.pointerEvents = 'none';
 
-const OVERPASS = 'https://overpass-api.de/api/interpreter';
+// Free public Overpass instances, tried in order; any one may be busy or rate-limiting.
+const OVERPASS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
+];
+
+async function overpass(query, timeoutMs, onTry) {
+  const errors = [];
+  for (const url of OVERPASS) {
+    const host = new URL(url).host;
+    onTry?.(host);
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, { method: 'POST', body: new URLSearchParams({ data: query }), signal: ctl.signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch (err) {
+      errors.push(`${host}: ${err.name === 'AbortError' ? 'timed out' : err.message}`);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw new Error(`All Overpass servers failed (${errors.join('; ')})`);
+}
 const vecRenderer = L.canvas({ padding: 0.3, tolerance: 6 });
 
 // ---------------- State ----------------
@@ -103,6 +150,53 @@ function download(name, data, type) {
 }
 const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 
+// ---------------- Place search (Nominatim; on submit only, per its usage policy) ----------------
+const results = $('#searchResults');
+$('#searchForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const q = $('#searchInput').value.trim();
+  if (!q) return;
+  results.hidden = false;
+  results.innerHTML = '<li class="empty">Searching…</li>';
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&q=${encodeURIComponent(q)}`;
+    const res = await fetch(url, { headers: { 'Accept-Language': navigator.language || 'en' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const hits = await res.json();
+    if (!hits.length) { results.innerHTML = '<li class="empty">No places found</li>'; return; }
+    results.innerHTML = '';
+    for (const h of hits) {
+      const [name, ...rest] = h.display_name.split(', ');
+      const li = document.createElement('li');
+      li.innerHTML = `<svg><use href="#i-pin"/></svg><div><b>${esc(name)}</b><small>${esc(rest.join(', '))}</small></div>`;
+      li.addEventListener('click', () => pickPlace(h, name));
+      results.append(li);
+    }
+  } catch (err) {
+    results.innerHTML = `<li class="empty">Search unavailable (${esc(err.message)})</li>`;
+  }
+});
+$('#searchInput').addEventListener('input', (e) => { if (!e.target.value) results.hidden = true; });
+document.addEventListener('click', (e) => { if (!e.target.closest('#searchForm')) results.hidden = true; });
+
+function pickPlace(h, name) {
+  results.hidden = true;
+  $('#searchInput').value = name;
+  setDemSource('global');
+  const [s, n, w, ee] = h.boundingbox.map(Number);
+  const lat = +h.lat, lon = +h.lon;
+  // Use the place's own extent when it is a sensible analysis size, else a ~16 km box around it.
+  const kmW = (ee - w) * 111.32 * Math.cos(lat * Math.PI / 180), kmH = (n - s) * 110.57;
+  const b = kmW > 3 && kmH > 3 && kmW < 40 && kmH < 40
+    ? L.latLngBounds([s, w], [n, ee])
+    : L.latLngBounds([lat - 0.072, lon - 0.072 / Math.cos(lat * Math.PI / 180)], [lat + 0.072, lon + 0.072 / Math.cos(lat * Math.PI / 180)]);
+  setAOI(b);
+  map.fitBounds(b, { padding: [40, 40] });
+}
+
+// ---------------- Steps ----------------
+function unlock(...ids) { ids.forEach((id) => $(id).classList.remove('locked')); }
+
 // ---------------- Area selection ----------------
 for (const [i, p] of PRESETS.entries()) $('#preset').append(new Option(p.name, i));
 $('#preset').addEventListener('change', (e) => {
@@ -120,7 +214,7 @@ $('#preset').addEventListener('change', (e) => {
 function setAOI(bounds) {
   state.aoi = bounds;
   if (state.aoiRect) state.aoiRect.remove();
-  state.aoiRect = L.rectangle(bounds, { color: '#8b5a2b', weight: 2, dashArray: '6 5', fill: false, interactive: false }).addTo(map);
+  state.aoiRect = L.rectangle(bounds, { color: ACCENT, weight: 2, dashArray: '6 6', fillColor: ACCENT, fillOpacity: 0.04, interactive: false }).addTo(map);
   describeAOI();
 }
 
@@ -158,7 +252,8 @@ $('#btnDraw').addEventListener('click', () => {
   if (drawing) return stopDraw();
   drawing = { start: null, rect: null };
   btn.classList.add('active');
-  btn.textContent = 'Drag on map…';
+  btn.querySelector('span').textContent = 'Drag on map…';
+  if (innerWidth <= 820) $('#panel').classList.add('collapsed');
   map.dragging.disable();
   map.getContainer().classList.add('aoi-drawing');
   toast('Click and drag on the map to draw the analysis area.', false, 3500);
@@ -170,12 +265,12 @@ function stopDraw() {
   map.getContainer().classList.remove('aoi-drawing');
   const btn = $('#btnDraw');
   btn.classList.remove('active');
-  btn.textContent = 'Draw area';
+  btn.querySelector('span').textContent = 'Draw on map';
 }
 map.on('mousedown', (e) => {
   if (!drawing) return;
   drawing.start = e.latlng;
-  drawing.rect = L.rectangle(L.latLngBounds(e.latlng, e.latlng), { color: '#8b5a2b', weight: 2, interactive: false }).addTo(map);
+  drawing.rect = L.rectangle(L.latLngBounds(e.latlng, e.latlng), { color: ACCENT, weight: 2, fillOpacity: 0.08, interactive: false }).addTo(map);
 });
 map.on('mousemove', (e) => {
   if (drawing?.start) drawing.rect.setBounds(L.latLngBounds(drawing.start, e.latlng));
@@ -185,6 +280,7 @@ map.on('mouseup', (e) => {
   const b = L.latLngBounds(drawing.start, e.latlng);
   stopDraw();
   lastDraw = Date.now();
+  $('#panel').classList.remove('collapsed');
   if (map.latLngToContainerPoint(b.getNorthWest()).distanceTo(map.latLngToContainerPoint(b.getSouthEast())) < 12) return;
   setAOI(b);
 });
@@ -236,7 +332,7 @@ async function runAnalysis() {
   if (!state.aoi) return;
   const btn = $('#btnRun');
   btn.disabled = true;
-  btn.textContent = 'Analysing…';
+  btn.textContent = 'Analyzing…';
   setProgress('Starting', 2);
   clearResults();
   const b = state.aoi;
@@ -261,39 +357,36 @@ async function runAnalysis() {
     const res = await call(msg, msg.upload ? [msg.upload.data.buffer] : []);
     state.analysis = res;
     await showTerrain(res);
-    $$('#stepScenario, #stepExposure, #stepLayers').forEach((s) => s.classList.remove('locked'));
+    unlock('#stepScenario', '#stepExposure', '#stepLayers');
+    $('#stepArea').classList.add('done');
     setProgress(`Done in ${fmt(res.stats.seconds)} s`, 100);
+    setTimeout(() => ($('#progress').hidden = true), 1800);
     await runScenario();
+    $('#stepScenario').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (err) {
     setProgress(err.message, 0);
     toast(err.message, true, 8000);
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Run terrain analysis';
+    btn.textContent = 'Analyze terrain';
   }
 }
 
 async function fetchRivers(b) {
-  const q = `[out:json][timeout:40];way["waterway"~"^(river|canal)$"](${b.s},${b.w},${b.n},${b.e});out geom;`;
-  const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), 45000);
+  const q = `[out:json][timeout:25];way["waterway"~"^(river|canal)$"](${b.s},${b.w},${b.n},${b.e});out geom;`;
   try {
-    const res = await fetch(OVERPASS, { method: 'POST', body: new URLSearchParams({ data: q }), signal: ctl.signal });
-    if (!res.ok) throw new Error(`Overpass ${res.status}`);
-    const json = await res.json();
+    const json = await overpass(q, 30000, (host) => setProgress(`Fetching mapped rivers (${host})`, 3));
     return json.elements.filter((e) => e.geometry).map((e) => e.geometry.map((p) => [p.lat, p.lon]));
   } catch (err) {
-    toast(`River lines unavailable (${err.message}). Continuing with the DEM alone.`, true, 6000);
+    toast(`River lines unavailable. Continuing with the DEM alone. ${err.message}`, true, 8000);
     return [];
-  } finally {
-    clearTimeout(timer);
   }
 }
 
 function clearResults() {
   for (const k of Object.keys(state.layers)) { state.layers[k]?.remove(); state.layers[k] = null; }
   state.analysis = state.scenario = state.exposure = null;
-  $('#terrainStats').hidden = $('#floodStats').hidden = $('#exposureStats').hidden = true;
+  $('#terrainStats').hidden = $('#floodStats').hidden = $('#exposureStats').hidden = $('#terrainMore').hidden = true;
   $('#floodWarn').hidden = true;
   $('#facilityList').innerHTML = '';
   $('#legend').hidden = true;
@@ -331,6 +424,7 @@ async function showTerrain(res) {
     ['Rivers burned (OSM)', s.rivers ? `${fmtInt(s.rivers)} lines · ${fmtInt(s.burnedCells)} cells` : 'none', true],
     ['Source', esc(s.source), true],
   ]);
+  $('#terrainMore').hidden = false;
   await setOverlay('hill', res.hill, 210);
   await setOverlay('hand', res.handImg, 220);
   buildStreams(res);
@@ -384,10 +478,10 @@ async function runScenario() {
     state.scenario = { ...res, params, mode };
     const s = res.stats;
     const items = [
-      ['Flooded area (P ≥ 0.5)', `${fmt(s.floodedKm2, 2)} km²`],
-      ['Plausible area (P ≥ 0.1)', `${fmt(s.plausibleKm2, 2)} km²`],
-      ['Mean depth', `${fmt(s.meanDepth, 2)} m`],
+      ['Flooded area', `${fmt(s.floodedKm2, 2)} km²`],
       ['Max depth', `${fmt(s.maxDepth, 1)} m`],
+      ['Plausible area (P ≥ 10%)', `${fmt(s.plausibleKm2, 2)} km²`],
+      ['Mean depth', `${fmt(s.meanDepth, 2)} m`],
     ];
     if (mode !== 'stage') {
       const big = state.analysis.reaches.reduce((a, r, i) => (r.areaKm2 > a.areaKm2 ? { ...r, i } : a), { areaKm2: 0 });
@@ -482,11 +576,7 @@ $('#btnExposure').addEventListener('click', async () => {
   const am = 'hospital|clinic|doctors|health_post|pharmacy|school|college|university|kindergarten|police|fire_station|shelter|townhall|community_centre|marketplace|water_point|drinking_water';
   const q = `[out:json][timeout:120];(way["building"](${bb});node["amenity"~"^(${am})$"](${bb});way["amenity"~"^(${am})$"](${bb}););out tags center 80000;`;
   try {
-    const res = await fetch(OVERPASS, {
-      method: 'POST', body: new URLSearchParams({ data: q }),
-    });
-    if (!res.ok) throw new Error(`Overpass API returned ${res.status}. It may be busy, so try again in a minute.`);
-    const json = await res.json();
+    const json = await overpass(q, 120000, (host) => { btn.textContent = `Querying OpenStreetMap (${host})…`; });
     const feats = [];
     const seen = new Set();
     for (const el of json.elements) {

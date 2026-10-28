@@ -2,200 +2,252 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Riverine — terrain-only flood exposure</title>
   <meta name="description" content="Map flood extent, depth, probability and exposed assets anywhere on Earth from a free global DEM, using HAND and synthetic rating curves.">
+  <meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.6v.1"/></symbol>
+  <symbol id="i-draw" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2.5" stroke-dasharray="3.2 2.6"/></symbol>
+  <symbol id="i-view" viewBox="0 0 24 24"><path d="M4 9V5.5A1.5 1.5 0 0 1 5.5 4H9M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3.5 8.5 4.5-8.5 4.5L3.5 8z"/><path d="m3.5 12 8.5 4.5 8.5-4.5M3.5 16l8.5 4.5 8.5-4.5"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v11m-4.5-4.5L12 15l4.5-4.5M5 19.5h14"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></symbol>
+</svg>
+
 <div id="app">
+  <div id="map"></div>
+
   <aside id="panel">
     <header class="brand">
       <div class="logo" aria-hidden="true">
         <svg viewBox="0 0 32 32"><path d="M3 22c4 0 4-3 8-3s4 3 8 3 4-3 8-3" /><path d="M3 27c4 0 4-3 8-3s4 3 8 3 4-3 8-3" /><path d="M9 15 16 4l7 11" /></svg>
       </div>
-      <div>
+      <div class="titles">
         <h1>Riverine</h1>
         <p>Flood exposure from terrain alone</p>
       </div>
-      <button class="ghost" id="btnMethod" title="Scientific method and references">Method</button>
+      <button class="icon" id="btnMethod" title="How it works" aria-label="How it works"><svg><use href="#i-info"/></svg></button>
+      <button class="icon sheet-toggle" id="btnSheet" aria-label="Collapse panel"><svg><use href="#i-chev"/></svg></button>
     </header>
 
-    <!-- 1. Area & terrain -->
-    <section class="step" id="stepArea">
-      <h2><span class="num">1</span> Area &amp; terrain</h2>
-      <label class="field">
-        <span>Example site</span>
-        <select id="preset">
-          <option value="">Choose an example…</option>
-        </select>
-      </label>
-      <div class="row">
-        <button id="btnDraw">Draw area</button>
-        <button id="btnView">Use map view</button>
-      </div>
-      <p class="hint" id="aoiInfo">No area selected. Draw a box, use the current view or pick an example.</p>
+    <form class="search" id="searchForm" role="search" autocomplete="off">
+      <svg class="lead"><use href="#i-search"/></svg>
+      <input type="search" id="searchInput" placeholder="Search a town, river or region" aria-label="Search a place">
+      <ul class="results" id="searchResults" hidden></ul>
+    </form>
 
-      <fieldset class="seg" id="demSource">
-        <legend>Elevation data</legend>
-        <label><input type="radio" name="dem" value="global" checked> Free global DEM</label>
-        <label><input type="radio" name="dem" value="upload"> My GeoTIFF</label>
-      </fieldset>
-      <div id="uploadBox" hidden>
-        <input type="file" id="fileDem" accept=".tif,.tiff">
-        <p class="hint">Single-band DEM in EPSG:4326, 3857 or WGS84 UTM (e.g. Copernicus GLO-30, FABDEM, local LiDAR). Its footprint becomes the analysis area.</p>
-      </div>
-
-      <div class="grid2">
-        <label class="field" id="detailField">
-          <span>Detail</span>
-          <select id="detail">
-            <option value="11">Coarse (~75 m)</option>
-            <option value="12" selected>Standard (~38 m)</option>
-            <option value="13">Fine (~19 m)</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>Stream threshold <abbr title="Minimum contributing area for a channel to start">km²</abbr></span>
-          <input type="number" id="thresh" value="1" min="0.05" max="500" step="0.05">
-        </label>
-      </div>
-      <div class="grid2 water">
-        <label class="check"><input type="checkbox" id="maskSea" checked> Mask open water</label>
-        <label class="field"><span>Water surface at or below (m)</span><input type="number" id="waterLevel" value="0" step="0.1"></label>
-      </div>
-      <p class="hint">0 m masks the sea. For a lake, enter its surface elevation so it acts as the base level instead of floodplain.</p>
-      <label class="check"><input type="checkbox" id="burn" checked> Burn OpenStreetMap rivers into the DEM</label>
-      <button class="primary" id="btnRun" disabled>Run terrain analysis</button>
-      <div class="progress" id="progress" hidden><div class="bar"></div><span class="msg"></span></div>
-      <dl class="stats" id="terrainStats" hidden></dl>
-    </section>
-
-    <!-- 2. Scenario -->
-    <section class="step locked" id="stepScenario">
-      <h2><span class="num">2</span> Flood scenario</h2>
-      <div class="tabs" role="tablist" id="modeTabs">
-        <button role="tab" data-mode="stage" aria-selected="true">Water level</button>
-        <button role="tab" data-mode="rain">Design rainfall</button>
-        <button role="tab" data-mode="flow">Known discharge</button>
-      </div>
-
-      <div class="mode" data-mode="stage">
-        <label class="field slider">
-          <span>Water level above channel <output id="stageOut">2.0 m</output></span>
-          <input type="range" id="stage" min="0" max="15" step="0.1" value="2">
-        </label>
-        <p class="hint">Same stage in every reach. Good for "what if the river rises X m" and for matching flood marks.</p>
-      </div>
-
-      <div class="mode" data-mode="rain" hidden>
-        <div class="grid2">
-          <label class="field"><span>24-h rainfall (mm)</span><input type="number" id="p24" value="120" min="1" max="1000" step="1"></label>
-          <label class="field"><span>Return period</span>
-            <select id="cf">
-              <option value="1">2–10 yr</option>
-              <option value="1.1">25 yr</option>
-              <option value="1.2" selected>50 yr</option>
-              <option value="1.25">100 yr</option>
+    <div class="scroll">
+      <!-- 1. Area & terrain -->
+      <section class="step" id="stepArea">
+        <h2><span class="num">1</span> Choose an area</h2>
+        <div class="body">
+          <div class="actions">
+            <button id="btnDraw"><svg><use href="#i-draw"/></svg><span>Draw on map</span></button>
+            <button id="btnView"><svg><use href="#i-view"/></svg><span>Use this view</span></button>
+          </div>
+          <label class="field select-inline">
+            <span class="sr">Example site</span>
+            <select id="preset">
+              <option value="">Or try an example…</option>
             </select>
           </label>
+          <p class="hint" id="aoiInfo">Search for a place, draw a box, or pick an example.</p>
+
+          <details class="more">
+            <summary>Terrain settings</summary>
+            <div class="more-body">
+              <fieldset class="seg" id="demSource">
+                <legend>Elevation data</legend>
+                <label><input type="radio" name="dem" value="global" checked> Free global DEM</label>
+                <label><input type="radio" name="dem" value="upload"> My GeoTIFF</label>
+              </fieldset>
+              <div id="uploadBox" hidden>
+                <input type="file" id="fileDem" accept=".tif,.tiff">
+                <p class="hint">Single-band DEM in EPSG:4326, 3857 or WGS84 UTM (e.g. Copernicus GLO-30, FABDEM, local LiDAR). Its footprint becomes the analysis area.</p>
+              </div>
+              <div class="grid2">
+                <label class="field" id="detailField">
+                  <span>Detail</span>
+                  <select id="detail">
+                    <option value="11">Coarse (~75 m)</option>
+                    <option value="12" selected>Standard (~38 m)</option>
+                    <option value="13">Fine (~19 m)</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Stream threshold <abbr title="Minimum contributing area for a channel to start">km²</abbr></span>
+                  <input type="number" id="thresh" value="1" min="0.05" max="500" step="0.05">
+                </label>
+              </div>
+              <label class="toggle"><span>Mask open water</span><input type="checkbox" class="switch" id="maskSea" checked></label>
+              <label class="field"><span>Water surface at or below (m)</span><input type="number" id="waterLevel" value="0" step="0.1"></label>
+              <p class="hint">0 m masks the sea. For a lake, enter its surface elevation so it acts as the base level instead of floodplain.</p>
+              <label class="toggle"><span>Burn OpenStreetMap rivers into the DEM</span><input type="checkbox" class="switch" id="burn" checked></label>
+            </div>
+          </details>
+
+          <button class="primary" id="btnRun" disabled>Analyze terrain</button>
+          <div class="progress" id="progress" hidden><div class="bar"></div><span class="msg"></span></div>
+          <details class="more" id="terrainMore" hidden>
+            <summary>Terrain summary</summary>
+            <dl class="stats" id="terrainStats" hidden></dl>
+          </details>
         </div>
-        <label class="field"><span>Dominant land cover / soil → runoff coefficient C</span>
-          <select id="runoffC">
-            <option value="0.15">Forest, sandy soils (0.15)</option>
-            <option value="0.25">Grassland / savanna (0.25)</option>
-            <option value="0.35" selected>Cropland, mixed rural (0.35)</option>
-            <option value="0.5">Bare / clay soils, degraded (0.50)</option>
-            <option value="0.7">Peri-urban (0.70)</option>
-            <option value="0.85">Dense urban (0.85)</option>
-          </select>
-        </label>
-        <p class="hint">Rational method per reach with Kirpich time of concentration and areal reduction. Rainfall depth can come from a local gauge, CHIRPS, or published IDF curves. Only catchment area inside the box is counted.</p>
-      </div>
+      </section>
 
-      <div class="mode" data-mode="flow" hidden>
-        <div class="grid2">
-          <label class="field"><span>Discharge at main outlet (m³/s)</span><input type="number" id="qref" value="400" min="0.1" step="10"></label>
-          <label class="field"><span>Area exponent b</span><input type="number" id="qexp" value="0.7" min="0.3" max="1" step="0.05"></label>
+      <!-- 2. Scenario -->
+      <section class="step locked" id="stepScenario">
+        <h2><span class="num">2</span> Set a flood scenario</h2>
+        <div class="body">
+          <div class="tabs" role="tablist" id="modeTabs">
+            <button role="tab" data-mode="stage" aria-selected="true">Water level</button>
+            <button role="tab" data-mode="rain">Rainfall</button>
+            <button role="tab" data-mode="flow">Discharge</button>
+          </div>
+
+          <div class="mode" data-mode="stage">
+            <label class="field big-slider">
+              <span>River rises by</span>
+              <output id="stageOut">2.0 m</output>
+              <input type="range" id="stage" min="0" max="15" step="0.1" value="2">
+            </label>
+            <p class="hint">Same rise in every reach. Good for “what if the river rises X m” and for matching flood marks.</p>
+          </div>
+
+          <div class="mode" data-mode="rain" hidden>
+            <div class="grid2">
+              <label class="field"><span>24-h rainfall (mm)</span><input type="number" id="p24" value="120" min="1" max="1000" step="1"></label>
+              <label class="field"><span>Return period</span>
+                <select id="cf">
+                  <option value="1">2–10 yr</option>
+                  <option value="1.1">25 yr</option>
+                  <option value="1.2" selected>50 yr</option>
+                  <option value="1.25">100 yr</option>
+                </select>
+              </label>
+            </div>
+            <label class="field"><span>Land cover</span>
+              <select id="runoffC">
+                <option value="0.15">Forest, sandy soils (C 0.15)</option>
+                <option value="0.25">Grassland / savanna (C 0.25)</option>
+                <option value="0.35" selected>Cropland, mixed rural (C 0.35)</option>
+                <option value="0.5">Bare / clay soils, degraded (C 0.50)</option>
+                <option value="0.7">Peri-urban (C 0.70)</option>
+                <option value="0.85">Dense urban (C 0.85)</option>
+              </select>
+            </label>
+            <p class="hint">Rational method per reach. Rainfall depth can come from a local gauge, CHIRPS, or published IDF curves. Only catchment area inside the box is counted.</p>
+          </div>
+
+          <div class="mode" data-mode="flow" hidden>
+            <div class="grid2">
+              <label class="field"><span>Peak at main outlet (m³/s)</span><input type="number" id="qref" value="400" min="0.1" step="10"></label>
+              <label class="field"><span>Area exponent b</span><input type="number" id="qexp" value="0.7" min="0.3" max="1" step="0.05"></label>
+            </div>
+            <p class="hint">Gauged or reported peak at the largest river. Other reaches scale by Q·(A/A<sub>ref</sub>)<sup>b</sup>.</p>
+          </div>
+
+          <dl class="stats hero" id="floodStats" hidden></dl>
+          <p class="warn" id="floodWarn" hidden></p>
+
+          <details class="more">
+            <summary>Roughness &amp; uncertainty</summary>
+            <div class="more-body">
+              <label class="field"><span>Manning's n</span>
+                <select id="manning">
+                  <option value="0.035">0.035 · clean channel</option>
+                  <option value="0.05">0.05 · pasture floodplain</option>
+                  <option value="0.06" selected>0.06 · mixed floodplain</option>
+                  <option value="0.08">0.08 · scrub / crops</option>
+                  <option value="0.12">0.12 · dense vegetation</option>
+                </select>
+              </label>
+              <label class="field slider"><span>Elevation uncertainty σ <output id="sigmaOut">1.0 m</output></span>
+                <input type="range" id="sigma" min="0.2" max="5" step="0.1" value="1">
+              </label>
+            </div>
+          </details>
         </div>
-        <p class="hint">Gauged or reported peak at the largest river in the area. Other reaches are scaled by drainage-area ratio Q·(A/A<sub>ref</sub>)<sup>b</sup>.</p>
-      </div>
+      </section>
 
-      <div class="grid2">
-        <label class="field"><span>Manning's n</span>
-          <select id="manning">
-            <option value="0.035">0.035 clean channel</option>
-            <option value="0.05">0.05 pasture floodplain</option>
-            <option value="0.06" selected>0.06 mixed floodplain</option>
-            <option value="0.08">0.08 scrub / crops</option>
-            <option value="0.12">0.12 dense vegetation</option>
-          </select>
-        </label>
-        <label class="field slider"><span>Uncertainty σ <output id="sigmaOut">1.0 m</output></span>
-          <input type="range" id="sigma" min="0.2" max="5" step="0.1" value="1">
-        </label>
-      </div>
-      <dl class="stats" id="floodStats" hidden></dl>
-      <p class="warn" id="floodWarn" hidden></p>
-    </section>
+      <!-- 3. Exposure -->
+      <section class="step locked" id="stepExposure">
+        <h2><span class="num">3</span> See what's exposed</h2>
+        <div class="body">
+          <button class="secondary" id="btnExposure">Find buildings &amp; facilities</button>
+          <p class="hint">From OpenStreetMap. Tap a facility to locate it.</p>
+          <dl class="stats" id="exposureStats" hidden></dl>
+          <ul class="facilities" id="facilityList"></ul>
+        </div>
+      </section>
 
-    <!-- 3. Exposure -->
-    <section class="step locked" id="stepExposure">
-      <h2><span class="num">3</span> Exposure</h2>
-      <button id="btnExposure">Find exposed buildings &amp; facilities</button>
-      <p class="hint">Building footprints and critical facilities from OpenStreetMap (Overpass API).</p>
-      <dl class="stats" id="exposureStats" hidden></dl>
-      <ul class="facilities" id="facilityList"></ul>
-    </section>
+      <!-- 4. Export -->
+      <section class="step locked" id="stepLayers">
+        <h2><span class="num"><svg><use href="#i-down"/></svg></span> Download</h2>
+        <div class="body">
+          <div class="exports">
+            <span>GeoTIFF</span>
+            <button class="chip" data-export="dem">DEM</button>
+            <button class="chip" data-export="hand">HAND</button>
+            <button class="chip" data-export="depth">Depth</button>
+            <button class="chip" data-export="prob">Probability</button>
+          </div>
+          <div class="exports">
+            <span>Vector</span>
+            <button class="chip" id="expReaches">Reaches (GeoJSON)</button>
+            <button class="chip" id="expExposure">Exposure (CSV)</button>
+          </div>
+        </div>
+      </section>
 
-    <!-- 4. Layers & export -->
-    <section class="step locked" id="stepLayers">
-      <h2><span class="num">4</span> Layers &amp; export</h2>
-      <div class="layers">
-        <label class="check"><input type="checkbox" data-layer="hill"> Hillshade</label>
-        <label class="check"><input type="checkbox" data-layer="hand"> HAND</label>
-        <label class="check"><input type="checkbox" data-layer="streams" checked> Streams</label>
-        <label class="check"><input type="checkbox" data-layer="flood" checked> Flood</label>
-        <label class="check"><input type="checkbox" data-layer="exposure" checked> Exposure</label>
-      </div>
-      <fieldset class="seg">
-        <legend>Flood display</legend>
+      <footer class="credits">
+        Screening tool — not a substitute for hydraulic modelling. Built on Leaflet, AWS Terrain Tiles, OpenStreetMap, Overpass, Nominatim, geotiff.js and EOX Sentinel-2 cloudless.
+      </footer>
+    </div>
+  </aside>
+
+  <div class="mapctl">
+    <button class="fab" id="btnLayers" aria-label="Map layers" aria-expanded="false" aria-controls="layersPop"><svg><use href="#i-layers"/></svg></button>
+    <div class="popover" id="layersPop" hidden>
+      <h3>Map</h3>
+      <fieldset class="seg" id="basemap">
+        <legend class="sr">Base map</legend>
+        <label><input type="radio" name="basemap" value="OpenStreetMap" checked> Default</label>
+        <label><input type="radio" name="basemap" value="OpenTopoMap"> Terrain</label>
+        <label><input type="radio" name="basemap" value="Sentinel-2 cloudless 2016"> Satellite</label>
+      </fieldset>
+      <h3>Overlays</h3>
+      <label class="toggle"><span>Flood</span><input type="checkbox" class="switch" data-layer="flood" checked></label>
+      <fieldset class="seg compact">
+        <legend class="sr">Flood display</legend>
         <label><input type="radio" name="floodView" value="depth" checked> Depth</label>
         <label><input type="radio" name="floodView" value="prob"> Probability</label>
       </fieldset>
-      <label class="field slider"><span>Overlay opacity <output id="opacityOut">80%</output></span>
+      <label class="toggle"><span>Streams</span><input type="checkbox" class="switch" data-layer="streams" checked></label>
+      <label class="toggle"><span>Exposure</span><input type="checkbox" class="switch" data-layer="exposure" checked></label>
+      <label class="toggle"><span>Hillshade</span><input type="checkbox" class="switch" data-layer="hill"></label>
+      <label class="toggle"><span>Height above drainage</span><input type="checkbox" class="switch" data-layer="hand"></label>
+      <label class="field slider"><span>Opacity <output id="opacityOut">80%</output></span>
         <input type="range" id="opacity" min="0.1" max="1" step="0.05" value="0.8">
       </label>
-      <div class="exports">
-        <span>GeoTIFF</span>
-        <button class="chip" data-export="dem">DEM</button>
-        <button class="chip" data-export="hand">HAND</button>
-        <button class="chip" data-export="depth">Depth</button>
-        <button class="chip" data-export="prob">Probability</button>
-      </div>
-      <div class="exports">
-        <span>Vector</span>
-        <button class="chip" id="expReaches">Reaches + rating curves (GeoJSON)</button>
-        <button class="chip" id="expExposure">Exposure (CSV)</button>
-      </div>
-    </section>
+    </div>
+  </div>
 
-    <footer class="credits">
-      Free and open: Leaflet · AWS Terrain Tiles (Mapzen/Tilezen) · OpenStreetMap &amp; Overpass · geotiff.js · EOX Sentinel-2 cloudless.
-      Screening tool — not a substitute for hydraulic modelling.
-    </footer>
-  </aside>
-
-  <main id="mapWrap">
-    <div id="map"></div>
-    <div id="legend" class="legend" hidden></div>
-    <div id="toast" class="toast" hidden></div>
-  </main>
+  <div id="legend" class="legend" hidden></div>
+  <div id="toast" class="toast" role="status" hidden></div>
 </div>
 
 <dialog id="method">
-  <form method="dialog"><button class="close" aria-label="Close">×</button></form>
+  <form method="dialog"><button class="icon close" aria-label="Close"><svg><use href="#i-close"/></svg></button></form>
   <article>
     <h2>How Riverine works</h2>
     <p>Riverine answers one question: <em>for a given flood, which ground goes under water, how deep, how sure are we, and what is there?</em>
@@ -214,8 +266,8 @@
     <h3>4 · Discharge in data-sparse catchments</h3>
     <ul>
       <li><b>Water level</b>: a uniform stage, for scenario testing and matching observed flood marks.</li>
-      <li><b>Design rainfall</b>: Rational method <i>Q = C<sub>f</sub>·C·i·A/3.6</i>. Time of concentration uses Kirpich (1940) on the longest flow path. Intensity comes from the 24-h depth by the IMD ratio <i>i<sub>t</sub> = (P<sub>24</sub>/24)(24/t)<sup>1/3</sup></i>, and the Leclerc &amp; Schaake (1972) areal reduction factor is applied. The Rational method is best for catchments under ~50 km². Use it as an indicative upper bound for larger ones.</li>
-      <li><b>Known discharge</b>: one reported or gauged peak, transferred to ungauged reaches by drainage-area ratio (exponent 0.5–0.9 is typical).</li>
+      <li><b>Rainfall</b>: Rational method <i>Q = C<sub>f</sub>·C·i·A/3.6</i>. Time of concentration uses Kirpich (1940) on the longest flow path. Intensity comes from the 24-h depth by the IMD ratio <i>i<sub>t</sub> = (P<sub>24</sub>/24)(24/t)<sup>1/3</sup></i>, and the Leclerc &amp; Schaake (1972) areal reduction factor is applied. The Rational method is best for catchments under ~50 km². Use it as an indicative upper bound for larger ones.</li>
+      <li><b>Discharge</b>: one reported or gauged peak, transferred to ungauged reaches by drainage-area ratio (exponent 0.5–0.9 is typical).</li>
     </ul>
 
     <h3>5 · Uncertainty</h3>
@@ -226,10 +278,10 @@
 
     <h3>Limitations</h3>
     <ul>
-      <li>HAND is a static, "bathtub-along-the-network" method. It ignores backwater, levees below DEM resolution, flood dynamics and coastal surge.</li>
+      <li>HAND is a static, “bathtub-along-the-network” method. It ignores backwater, levees below DEM resolution, flood dynamics and coastal surge.</li>
       <li>DEMs record the water surface, not the river bed, so channel conveyance is under-estimated at low stages.</li>
       <li>The default global DEM (SRTM-derived) includes tree canopy and buildings. Upload FABDEM or LiDAR where possible.</li>
-      <li>Only catchment area <em>inside</em> the analysis box is counted. For a large river entering from outside, use <b>Known discharge</b> or draw the box around the whole catchment.</li>
+      <li>Only catchment area <em>inside</em> the analysis box is counted. For a large river entering from outside, use <b>Discharge</b> or draw the box around the whole catchment.</li>
       <li>Use the results for screening, prioritisation and early action, not for engineering design.</li>
     </ul>
 
