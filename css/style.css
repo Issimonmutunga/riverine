@@ -89,19 +89,11 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .brand .titles { flex: 1; min-width: 0; }
 .brand h1 { margin: 0; }
 .brand p { margin: 0; color: var(--muted); font-size: 12.5px; }
-/* Wordmark: heavy display type with blue water filling the letters up to a waterline */
+/* Wordmark: solid heavy type, ink on the panel ground */
 .brand h1.wordmark {
-  display: inline-block;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
-  font-size: 30px; font-weight: 800; letter-spacing: -0.04em; line-height: 1.1;
-  padding-right: 2px;
-  color: transparent;
-  background-image:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 40' preserveAspectRatio='none'%3E%3Cdefs%3E%3ClinearGradient id='w' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%2346a6ff'/%3E%3Cstop offset='1' stop-color='%23004fa8'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M0 20 Q12 15 24 20 T48 20 V40 H0Z' fill='url(%23w)'/%3E%3C/svg%3E"),
-    linear-gradient(var(--ink), var(--ink));
-  background-repeat: repeat-x, no-repeat;
-  background-size: 48px 100%, 100% 100%;
-  -webkit-background-clip: text; background-clip: text;
+  font-size: 22px; font-weight: 800; letter-spacing: -0.03em; line-height: 1.15;
+  color: var(--ink);
 }
 .credits a { color: var(--muted); }
 
@@ -432,7 +424,7 @@ dialog .close { position: sticky; top: 14px; float: right; margin: 14px 14px 0 0
   #panel::before { opacity: .6; }
   .brand { padding: 18px 16px 8px; }
   .brand p { display: none; }
-  .brand h1.wordmark { font-size: 26px; }
+  .brand h1.wordmark { font-size: 20px; }
   /* On the sheet the arrow points the way it will move: down to tuck away, up to open. */
   .brand .sheet-toggle svg { transform: rotate(90deg); }
   #panel.shut .sheet-toggle svg { transform: rotate(-90deg); }
