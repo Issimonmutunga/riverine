@@ -401,8 +401,6 @@ function rgbaToURL(rgba, W, H) {
 }
 function gridBounds(g) { return L.latLngBounds([g.bounds.s, g.bounds.w], [g.bounds.n, g.bounds.e]); }
 
-// Keep popups in proportion to the analysis area: full size when it fills the view,
-// smaller for each zoom level out, and closed once the area is a speck.
 // Zoom levels between the view that fits the area and the current view (0 or less = zoomed in).
 function zoomOutBy() {
   const g = state.analysis?.grid;
@@ -413,14 +411,15 @@ function zoomOutBy() {
 const FAR_ZOOM_OUT = 4;
 const zoomedFarOut = () => zoomOutBy() >= FAR_ZOOM_OUT;
 
-function scalePopups() {
-  const dz = zoomOutBy();
-  if (dz >= FAR_ZOOM_OUT) map.closePopup();
-  const scale = dz <= 0 ? 1 : Math.max(0.7, 1 - 0.1 * dz);
-  map.getContainer().style.setProperty('--pop-scale', scale);
-  map.eachLayer((l) => l instanceof L.Popup && l.update());
-}
-map.on('zoomend popupopen', scalePopups);
+// A popup belongs to the zoom it was opened at: zooming out past that closes it,
+// so it never sits oversized over a shrinking area. None open once the area is a speck.
+let popupZoom = null;
+map.on('popupopen', () => {
+  if (zoomedFarOut()) return map.closePopup();
+  popupZoom = map.getZoom();
+});
+map.on('popupclose', () => { popupZoom = null; });
+map.on('zoomend', () => { if (popupZoom != null && map.getZoom() < popupZoom) map.closePopup(); });
 map.on('zoomend', () => syncLayers());
 
 async function setOverlay(key, rgba, zIndex) {
