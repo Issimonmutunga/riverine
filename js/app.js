@@ -400,6 +400,18 @@ function rgbaToURL(rgba, W, H) {
 }
 function gridBounds(g) { return L.latLngBounds([g.bounds.s, g.bounds.w], [g.bounds.n, g.bounds.e]); }
 
+// Keep popups in proportion to the analysis area: full size when it fills the view,
+// smaller for each zoom level out, and closed once the area is a speck.
+function scalePopups() {
+  const g = state.analysis?.grid;
+  const dz = g ? map.getBoundsZoom(gridBounds(g)) - map.getZoom() : 0;
+  if (dz >= 4) map.closePopup();
+  const scale = dz <= 0 ? 1 : Math.max(0.7, 1 - 0.1 * dz);
+  map.getContainer().style.setProperty('--pop-scale', scale);
+  map.eachLayer((l) => l instanceof L.Popup && l.update());
+}
+map.on('zoomend popupopen', scalePopups);
+
 async function setOverlay(key, rgba, zIndex) {
   const g = state.analysis.grid;
   const url = await rgbaToURL(rgba, g.W, g.H);
@@ -631,7 +643,10 @@ async function hoverAt(e) {
 if (matchMedia('(hover: hover)').matches) {
   let popupOpen = false;
   map.on('popupopen', () => (popupOpen = true)).on('popupclose', () => (popupOpen = false));
-  map.on('mousemove', (e) => { if (state.scenario && !drawing && !popupOpen) hoverAt(e); });
+  map.on('mousemove', (e) => {
+    if (e.originalEvent?.target.closest?.('.leaflet-popup')) return hideTip();
+    if (state.scenario && !drawing && !popupOpen) hoverAt(e);
+  });
   map.on('mouseout dragstart zoomstart popupopen', hideTip);
 }
 

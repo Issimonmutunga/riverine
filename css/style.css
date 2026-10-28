@@ -380,6 +380,8 @@ dialog .close { position: sticky; top: 14px; float: right; margin: 14px 14px 0 0
 .leaflet-control-attribution { background: var(--surface) !important; color: var(--muted); border-radius: 8px 0 0 0; font-size: 10.5px; }
 .leaflet-control-attribution a { color: var(--muted); }
 .leaflet-popup-content-wrapper { border-radius: var(--radius); box-shadow: var(--shadow); }
+/* Popups shrink as you zoom out (--pop-scale set from app.js; Leaflet re-measures them after each zoom). */
+.leaflet-popup-content-wrapper, .leaflet-popup-tip-container { zoom: var(--pop-scale, 1); }
 .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--solid); color: var(--ink); }
 .leaflet-popup-content { margin: 14px 16px; font-size: 13px; }
 .leaflet-container a.leaflet-popup-close-button { color: var(--muted); top: 6px; right: 6px; }
