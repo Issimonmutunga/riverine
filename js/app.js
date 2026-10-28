@@ -639,7 +639,7 @@ async function hoverAt(e) {
   try {
     const { values: [v] } = await call({ type: 'sample', points: [[e.latlng.lat, e.latlng.lng]] });
     if (gen !== hoverGen) return;
-    if (!v || (!(v.depth > 0) && v.prob < 0.05) || drawing) { hideTip(); return; }
+    if (!v || (!(v.depth > 0) && v.prob < 0.05) || drawing || popupShown()) { hideTip(); return; }
     const sev = severity(v.depth);
     tip.innerHTML = `<i class="dot" style="background:${sev.color}"></i><b>${v.depth > 0 ? `${depthText(v.depth)} deep` : 'Dry here'}</b><span>${sev.label} · ${Math.round(v.prob * 100)}% chance</span>`;
     tip.style.left = `${e.containerPoint.x}px`;
@@ -650,14 +650,15 @@ async function hoverAt(e) {
     if (hoverNext) { const n = hoverNext; hoverNext = null; hoverAt(n); }
   }
 }
+// Any popup in the DOM (opening, open or fading out) suppresses the hover readout.
+const popupShown = () => !!map.getContainer().querySelector('.leaflet-popup');
 if (matchMedia('(hover: hover)').matches) {
-  let popupOpen = false;
-  map.on('popupopen', () => (popupOpen = true)).on('popupclose', () => (popupOpen = false));
   map.on('mousemove', (e) => {
-    if (e.originalEvent?.target.closest?.('.leaflet-popup')) return hideTip();
-    if (state.scenario && !drawing && !popupOpen && !zoomedFarOut()) hoverAt(e);
+    if (popupShown()) return hideTip();
+    if (state.scenario && !drawing && !zoomedFarOut()) hoverAt(e);
   });
-  map.on('mouseout dragstart zoomstart popupopen', hideTip);
+  // mousedown covers the gap between a click and its popup appearing.
+  map.on('mousedown mouseout dragstart zoomstart popupopen', hideTip);
 }
 
 // ---------------- Exposure (OpenStreetMap) ----------------
