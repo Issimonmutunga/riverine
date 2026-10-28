@@ -1,4 +1,4 @@
-// Zero-dependency static server for Flood Depths:  node server.js  →  http://localhost:8080
+// Zero-dependency static server for Flood Depth:  node server.js  →  http://localhost:8080
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -36,5 +36,5 @@ function listen(port, triesLeft = 20) {
   server.listen(port);
   server.once('listening', () => server.off('error', onError));
 }
-server.on('listening', () => console.log(`Flood Depths running at http://localhost:${server.address().port}`));
+server.on('listening', () => console.log(`Flood Depth running at http://localhost:${server.address().port}`));
 listen(PORT);

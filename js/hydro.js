@@ -1,4 +1,4 @@
-// Flood Depths hydrology core — pure functions over a regular grid.
+// Flood Depth hydrology core — pure functions over a regular grid.
 //
 // Pipeline (all O(n) or O(n log n)):
 //   1. Priority-Flood + epsilon depression filling      (Barnes et al., 2014)

@@ -1,4 +1,4 @@
-// Flood Depths UI: map, area selection, worker orchestration, exposure and exports.
+// Flood Depth UI: map, area selection, worker orchestration, exposure and exports.
 import * as G from './geo.js';
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -464,8 +464,43 @@ function scenarioParams() {
     b: +$('#qexp').value || 0.7,
     n: +$('#manning').value,
     sigma: +$('#sigma').value,
+    danger: dangerDepth(),
   };
 }
+
+// ---------------- Danger depth ----------------
+const dangerDepth = () => ($('#dangerOn').checked ? +$('#danger').value : Infinity);
+
+function severity(depth) {
+  const danger = dangerDepth();
+  if (!(depth > 0)) return { label: 'Dry', color: '#8e8e93' };
+  if (depth >= danger) return { label: 'Dangerous', color: '#e0301e' };
+  if (depth < 0.5) return { label: 'Shallow', color: '#4292c6' };
+  return { label: 'Moderate', color: '#1f5fa8' };
+}
+
+const depthText = (d) => (!(d > 0) ? '0 m' : d < 0.01 ? '< 0.01 m' : `${fmt(d, 2)} m`);
+
+function showDangerReadout(km2) {
+  const d = dangerDepth();
+  $('#dangerCard').classList.toggle('off', !Number.isFinite(d));
+  $('#dangerReadout').innerHTML = Number.isFinite(d) && km2 != null
+    ? `<b>${fmt(km2, 2)} km²</b> deeper than ${fmt(d, 1)} m, shown in red`
+    : '';
+}
+
+async function restyle() {
+  if (!state.scenario) return;
+  try {
+    const res = await call({ type: 'restyle', danger: dangerDepth() });
+    state.scenario.stats.deepKm2 = res.deepKm2;
+    showDangerReadout(res.deepKm2);
+    await setOverlay('depth', res.depthImg, 230);
+  } catch (err) { toast(err.message, true); }
+}
+const restyleSoon = debounce(restyle, 60);
+$('#danger').addEventListener('input', (e) => { $('#dangerOut').textContent = `${(+e.target.value).toFixed(1)} m`; restyleSoon(); });
+$('#dangerOn').addEventListener('change', () => { showDangerReadout(state.scenario?.stats.deepKm2); restyle(); });
 
 let scenarioBusy = false, scenarioQueued = false;
 async function runScenario() {
@@ -496,6 +531,7 @@ async function runScenario() {
     }
     $('#floodWarn').hidden = !warns.length;
     $('#floodWarn').textContent = warns.join(' ');
+    showDangerReadout(s.deepKm2);
     await Promise.all([setOverlay('depth', res.depthImg, 230), setOverlay('prob', res.probImg, 230)]);
     if (state.exposure) await sampleExposure();
   } catch (err) {
@@ -553,17 +589,51 @@ map.on('click', async (e) => {
   try {
     const { values: [v] } = await call({ type: 'sample', points: [[e.latlng.lat, e.latlng.lng]] });
     if (!v) return;
+    hideTip();
+    const sev = severity(v.depth);
     const rows = [
-      ['Elevation', v.elev != null ? `${fmt(v.elev, 1)} m` : '—'],
-      ['HAND', v.hand != null ? `${fmt(v.hand, 2)} m` : 'not drained to a channel'],
+      ['Chance of flooding', `${Math.round(v.prob * 100)}%`],
+      ['Ground elevation', v.elev != null ? `${fmt(v.elev, 1)} m` : '—'],
+      ['Height above river', v.hand != null ? `${fmt(v.hand, 2)} m` : 'not drained to a channel'],
+      ['River stage here', v.stage != null ? `${fmt(v.stage, 2)} m` : '—'],
       ['Reach', v.reach >= 0 ? v.reach + 1 : '—'],
-      ['Scenario stage', v.stage != null ? `${fmt(v.stage, 2)} m` : '—'],
-      ['Flood depth', `${fmt(v.depth, 2)} m`],
-      ['Flood probability', `${Math.round(v.prob * 100)}%`],
     ];
-    L.popup().setLatLng(e.latlng).setContent(`<div class="pop"><h4>Point</h4><table>${rows.map(([a, b]) => `<tr><td>${a}</td><td>${b}</td></tr>`).join('')}</table></div>`).openOn(map);
+    L.popup({ maxWidth: 260 }).setLatLng(e.latlng).setContent(`<div class="pop">
+      <div class="hero"><strong>${depthText(v.depth)}</strong><span class="badge" style="background:${sev.color}">${sev.label}</span></div>
+      <table>${rows.map(([a, b]) => `<tr><td>${a}</td><td>${b}</td></tr>`).join('')}</table></div>`).openOn(map);
   } catch { /* ignore */ }
 });
+
+// Hover readout: depth under the cursor, one worker request in flight at a time.
+const tip = Object.assign(document.createElement('div'), { className: 'hovertip', hidden: true });
+$('#app').append(tip);
+let hoverBusy = false, hoverNext = null, hoverGen = 0;
+// Bumping the generation drops any sample still in flight, so a stale readout can't reappear.
+const hideTip = () => { tip.hidden = true; hoverNext = null; hoverGen++; };
+async function hoverAt(e) {
+  if (hoverBusy) { hoverNext = e; return; }
+  hoverBusy = true;
+  const gen = hoverGen;
+  try {
+    const { values: [v] } = await call({ type: 'sample', points: [[e.latlng.lat, e.latlng.lng]] });
+    if (gen !== hoverGen) return;
+    if (!v || (!(v.depth > 0) && v.prob < 0.05) || drawing) { hideTip(); return; }
+    const sev = severity(v.depth);
+    tip.innerHTML = `<i class="dot" style="background:${sev.color}"></i><b>${v.depth > 0 ? `${depthText(v.depth)} deep` : 'Dry here'}</b><span>${sev.label} · ${Math.round(v.prob * 100)}% chance</span>`;
+    tip.style.left = `${e.containerPoint.x}px`;
+    tip.style.top = `${e.containerPoint.y}px`;
+    tip.hidden = false;
+  } catch { hideTip(); } finally {
+    hoverBusy = false;
+    if (hoverNext) { const n = hoverNext; hoverNext = null; hoverAt(n); }
+  }
+}
+if (matchMedia('(hover: hover)').matches) {
+  let popupOpen = false;
+  map.on('popupopen', () => (popupOpen = true)).on('popupclose', () => (popupOpen = false));
+  map.on('mousemove', (e) => { if (state.scenario && !drawing && !popupOpen) hoverAt(e); });
+  map.on('mouseout dragstart zoomstart popupopen', hideTip);
+}
 
 // ---------------- Exposure (OpenStreetMap) ----------------
 const FACILITY = /^(hospital|clinic|doctors|health_post|pharmacy|school|college|university|kindergarten|police|fire_station|shelter|townhall|community_centre|marketplace|water_point|drinking_water)$/;
@@ -625,7 +695,12 @@ async function sampleExposure() {
     const m = L.circleMarker([f.lat, f.lon], {
       renderer: vecRenderer, radius: 7, weight: 2, color: '#fff', fillColor: f.prob >= 0.1 ? probColor(f.prob) : '#2b8a3e', fillOpacity: 1, bubblingMouseEvents: false,
     });
-    m.bindPopup(`<div class="pop"><h4>${esc(f.name || f.kind)}</h4><table><tr><td>Type</td><td>${esc(f.kind.replace(/_/g, ' '))}</td></tr><tr><td>Flood depth</td><td>${fmt(f.depth, 2)} m</td></tr><tr><td>Probability</td><td>${Math.round(f.prob * 100)}%</td></tr></table></div>`);
+    m.bindPopup(() => {
+      const sev = severity(f.depth);
+      return `<div class="pop"><h4>${esc(f.name || f.kind.replace(/_/g, ' '))}</h4>
+        <div class="hero"><strong>${depthText(f.depth)}</strong><span class="badge" style="background:${sev.color}">${sev.label}</span></div>
+        <table><tr><td>Type</td><td>${esc(f.kind.replace(/_/g, ' '))}</td></tr><tr><td>Chance of flooding</td><td>${Math.round(f.prob * 100)}%</td></tr></table></div>`;
+    });
     f.marker = m;
     group.addLayer(m);
   }
@@ -669,17 +744,24 @@ function syncLayers() {
 function renderLegend(want) {
   const el = $('#legend');
   const parts = [];
-  if (want.depth && state.layers.depth) parts.push(['Flood depth (m)', 'linear-gradient(90deg,#9ecae1,#4292c6,#2166ac,#084594,#081d58)', ['0', '1.5', '3', '6+']]);
+  const danger = dangerDepth();
+  if (want.depth && state.layers.depth && Number.isFinite(danger)) {
+    const pct = Math.min(danger / 6, 1) * 100;
+    parts.push(['Flood depth (m)', `linear-gradient(90deg,#9ecae1,#2166ac ${pct}%,#fd8d3c ${pct}%,#bd0026)`, [[0, '0'], [pct, fmt(danger, 1)], [100, '6+']]]);
+  } else if (want.depth && state.layers.depth) parts.push(['Flood depth (m)', 'linear-gradient(90deg,#9ecae1,#4292c6,#2166ac,#084594,#081d58)', ['0', '1.5', '3', '6+']]);
   if (want.prob && state.layers.prob) parts.push(['Flood probability', 'linear-gradient(90deg,#ffeda0,#feb24c,#f03b20,#bd0026,#800026)', ['5%', '25%', '50%', '100%']]);
   if (want.hand && state.layers.hand) parts.push(['HAND (m above channel)', 'linear-gradient(90deg,#08306b,#2171b5,#4292c6,#6baed6,#a1d99b,#fee391,#ece2d6)', ['0', '3', '10', '40+']]);
   el.hidden = !parts.length;
-  el.innerHTML = parts.map(([t, g, ticks]) => `<h4>${t}</h4><div class="ramp" style="background:${g}"></div><div class="ticks">${ticks.map((x) => `<span>${x}</span>`).join('')}</div>`).join('<div style="height:10px"></div>');
+  const tickRow = (ticks) => (Array.isArray(ticks[0])
+    ? `<div class="ticks abs">${ticks.map(([p, x]) => `<span style="left:${p}%">${x}</span>`).join('')}</div>`
+    : `<div class="ticks">${ticks.map((x) => `<span>${x}</span>`).join('')}</div>`);
+  el.innerHTML = parts.map(([t, g, ticks]) => `<h4>${t}</h4><div class="ramp" style="background:${g}"></div>${tickRow(ticks)}`).join('<div style="height:10px"></div>');
 }
 
 $$('[data-export]').forEach((b) => b.addEventListener('click', async () => {
   try {
     const { buffer } = await call({ type: 'export', layer: b.dataset.export });
-    download(`flood_depths_${b.dataset.export}.tif`, buffer, 'image/tiff');
+    download(`flood_depth_${b.dataset.export}.tif`, buffer, 'image/tiff');
   } catch (err) { toast(err.message, true); }
 }));
 
@@ -689,7 +771,7 @@ $('#expReaches').addEventListener('click', () => {
   const n = sc?.params.n ?? +$('#manning').value;
   const fc = {
     type: 'FeatureCollection',
-    metadata: { generator: 'Flood Depths', manning_n: n, stages_m: a.stages, scenario: sc ? { mode: sc.mode, ...sc.params } : null },
+    metadata: { generator: 'Flood Depth', manning_n: n, stages_m: a.stages, scenario: sc ? { mode: sc.mode, ...sc.params } : null },
     features: a.reaches.map((r) => ({
       type: 'Feature',
       geometry: { type: 'LineString', coordinates: r.line.map(([lat, lon]) => [lon, lat]) },
@@ -700,7 +782,7 @@ $('#expReaches').addEventListener('click', () => {
       },
     })),
   };
-  download('flood_depths_reaches.geojson', JSON.stringify(fc), 'application/geo+json');
+  download('flood_depth_reaches.geojson', JSON.stringify(fc), 'application/geo+json');
 });
 
 $('#expExposure').addEventListener('click', () => {
@@ -708,10 +790,10 @@ $('#expExposure').addEventListener('click', () => {
   if (!ex) return toast('Find exposed buildings first.', true);
   const rows = [['osm_id', 'kind', 'name', 'lat', 'lon', 'depth_m', 'probability']];
   for (const f of ex.feats) rows.push([f.id, f.kind, `"${(f.name || '').replace(/"/g, '""')}"`, f.lat.toFixed(6), f.lon.toFixed(6), f.depth.toFixed(2), f.prob.toFixed(3)]);
-  download('flood_depths_exposure.csv', rows.map((r) => r.join(',')).join('\n'), 'text/csv');
+  download('flood_depth_exposure.csv', rows.map((r) => r.join(',')).join('\n'), 'text/csv');
 });
 
 $('#btnMethod').addEventListener('click', () => $('#method').showModal());
 
-// Console access for power users: floodDepths.state.analysis, floodDepths.map, …
-window.floodDepths = { map, state };
+// Console access for power users: floodDepth.state.analysis, floodDepth.map, …
+window.floodDepth = { map, state };

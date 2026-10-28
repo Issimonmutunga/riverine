@@ -1,4 +1,4 @@
-// Flood Depths analysis worker: loads a DEM onto a Web-Mercator pixel grid, runs the
+// Flood Depth analysis worker: loads a DEM onto a Web-Mercator pixel grid, runs the
 // terrain/hydrology pipeline once, then answers fast flood-scenario queries.
 import * as G from './geo.js';
 import * as Hy from './hydro.js';
@@ -16,6 +16,7 @@ self.onmessage = async (ev) => {
     if (m.type === 'analyze') await analyze(m);
     else if (m.type === 'scenario') scenario(m);
     else if (m.type === 'sample') sample(m);
+    else if (m.type === 'restyle') restyle(m);
     else if (m.type === 'export') exportLayer(m);
   } catch (err) {
     postMessage({ type: 'error', id: m.id, message: err.message || String(err) });
@@ -299,14 +300,33 @@ function scenario(m) {
     }
   }
   S.depth = depth; S.prob = prob; S.hR = hR;
-  const depthImg = renderDepth(depth, N);
+  const danger = p.danger ?? Infinity;
+  const depthImg = renderDepth(depth, N, danger);
   const probImg = renderProb(prob, N);
   postMessage({
     type: 'scenario', id: m.id,
     hR: Array.from(hR), qR: Array.from(qR),
-    stats: { floodedKm2: floodedM2 / 1e6, plausibleKm2: plausibleM2 / 1e6, meanDepth: floodedM2 ? depthSum / floodedM2 : 0, maxDepth, capped },
+    stats: { floodedKm2: floodedM2 / 1e6, plausibleKm2: plausibleM2 / 1e6, meanDepth: floodedM2 ? depthSum / floodedM2 : 0, maxDepth, capped, deepKm2: deepArea(danger) },
     depthImg, probImg,
   }, [depthImg.buffer, probImg.buffer]);
+}
+
+// Area deeper than the danger depth, in km².
+function deepArea(danger) {
+  const { depth, W, H, rowScale } = S;
+  let m2 = 0;
+  for (let r = 0; r < H; r++) {
+    const a = rowScale[r] * rowScale[r];
+    for (let c = 0; c < W; c++) if (depth[r * W + c] >= danger) m2 += a;
+  }
+  return m2 / 1e6;
+}
+
+// Recolour the depth layer for a new danger depth without recomputing the scenario.
+function restyle(m) {
+  if (!S?.depth) throw new Error('Run a flood scenario first.');
+  const depthImg = renderDepth(S.depth, S.N, m.danger);
+  postMessage({ type: 'restyled', id: m.id, depthImg, deepKm2: deepArea(m.danger) }, [depthImg.buffer]);
 }
 
 function sample(m) {
@@ -367,7 +387,11 @@ const handRamp = ramp([
 function renderHAND(hand, N) { return paint(hand, N, handRamp); }
 
 const depthRamp = ramp([[0, 158, 202, 225, 200], [0.5, 66, 146, 198, 215], [1.5, 33, 102, 172, 225], [3, 8, 69, 148, 235], [6, 8, 29, 88, 245]]);
-function renderDepth(depth, N) { return paint(depth, N, (v) => (v > 0 ? depthRamp(v) : null)); }
+// Water at or above the danger depth switches to a warm ramp so it stands out.
+const dangerRamp = ramp([[0, 253, 141, 60, 220], [1, 240, 59, 32, 232], [3, 189, 0, 38, 240], [6, 128, 0, 38, 245]]);
+function renderDepth(depth, N, danger = Infinity) {
+  return paint(depth, N, (v) => (v > 0 ? (v >= danger ? dangerRamp(v - danger) : depthRamp(v)) : null));
+}
 
 const probRamp = ramp([[0.05, 255, 237, 160, 90], [0.25, 254, 178, 76, 170], [0.5, 240, 59, 32, 205], [0.8, 189, 0, 38, 225], [1, 128, 0, 38, 240]]);
 function renderProb(prob, N) { return paint(prob, N, (v) => (v >= 0.05 ? probRamp(v) : null)); }
