@@ -402,15 +402,25 @@ function gridBounds(g) { return L.latLngBounds([g.bounds.s, g.bounds.w], [g.boun
 
 // Keep popups in proportion to the analysis area: full size when it fills the view,
 // smaller for each zoom level out, and closed once the area is a speck.
-function scalePopups() {
+// Zoom levels between the view that fits the area and the current view (0 or less = zoomed in).
+function zoomOutBy() {
   const g = state.analysis?.grid;
-  const dz = g ? map.getBoundsZoom(gridBounds(g)) - map.getZoom() : 0;
-  if (dz >= 4) map.closePopup();
+  const b = g ? gridBounds(g) : state.aoi;
+  return b ? map.getBoundsZoom(b) - map.getZoom() : 0;
+}
+// Past this many levels the area is a speck, so its box, overlays, legend and popups are hidden.
+const FAR_ZOOM_OUT = 4;
+const zoomedFarOut = () => zoomOutBy() >= FAR_ZOOM_OUT;
+
+function scalePopups() {
+  const dz = zoomOutBy();
+  if (dz >= FAR_ZOOM_OUT) map.closePopup();
   const scale = dz <= 0 ? 1 : Math.max(0.7, 1 - 0.1 * dz);
   map.getContainer().style.setProperty('--pop-scale', scale);
   map.eachLayer((l) => l instanceof L.Popup && l.update());
 }
 map.on('zoomend popupopen', scalePopups);
+map.on('zoomend', () => syncLayers());
 
 async function setOverlay(key, rgba, zIndex) {
   const g = state.analysis.grid;
@@ -645,7 +655,7 @@ if (matchMedia('(hover: hover)').matches) {
   map.on('popupopen', () => (popupOpen = true)).on('popupclose', () => (popupOpen = false));
   map.on('mousemove', (e) => {
     if (e.originalEvent?.target.closest?.('.leaflet-popup')) return hideTip();
-    if (state.scenario && !drawing && !popupOpen) hoverAt(e);
+    if (state.scenario && !drawing && !popupOpen && !zoomedFarOut()) hoverAt(e);
   });
   map.on('mouseout dragstart zoomstart popupopen', hideTip);
 }
@@ -741,8 +751,14 @@ $('#opacity').addEventListener('input', (e) => {
 });
 
 function syncLayers() {
-  const on = (k) => $(`[data-layer=${k}]`).checked;
+  const far = zoomedFarOut();
+  const on = (k) => !far && $(`[data-layer=${k}]`).checked;
   const view = $('input[name=floodView]:checked').value;
+  if (state.aoiRect) {
+    if (far && map.hasLayer(state.aoiRect)) state.aoiRect.remove();
+    if (!far && !map.hasLayer(state.aoiRect)) state.aoiRect.addTo(map);
+  }
+  if (far) hideTip();
   const want = {
     hill: on('hill'), hand: on('hand'), streams: on('streams'), exposure: on('exposure'),
     depth: on('flood') && view === 'depth', prob: on('flood') && view === 'prob',
