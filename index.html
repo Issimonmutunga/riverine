@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Flood Depth — terrain-only flood exposure</title>
   <meta name="description" content="Map flood extent, depth, probability and exposed assets anywhere on Earth from a free global DEM, using HAND and synthetic rating curves.">
+  <meta name="author" content="Simon Maps">
   <meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
@@ -31,6 +32,7 @@
       <div class="titles">
         <h1 class="wordmark">Flood Depth</h1>
         <p>Flood exposure from terrain alone</p>
+        <a class="maker" href="https://simonmapper.co.ke" target="_blank" rel="author noopener">by Simon Maps</a>
       </div>
       <button class="icon" id="btnMethod" title="How it works" aria-label="How it works"><svg><use href="#i-info"/></svg></button>
       <button class="icon sheet-toggle" id="btnSheet" aria-label="Collapse panel"><svg><use href="#i-chev"/></svg></button>
@@ -215,6 +217,7 @@
       </section>
 
       <footer class="credits">
+        Made by <a href="https://simonmapper.co.ke" target="_blank" rel="author noopener">Simon Maps</a>.
         Screening tool — not a substitute for hydraulic modelling. Built on Leaflet, AWS Terrain Tiles, OpenStreetMap, Overpass, Nominatim, geotiff.js and EOX Sentinel-2 cloudless.
       </footer>
     </div>
