@@ -1,5 +1,6 @@
 // Flood Depth UI: map, area selection, worker orchestration, exposure and exports.
 import * as G from './geo.js';
+import { foldStep, peekPanel, restorePanel } from './panel.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -49,8 +50,6 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { toggleLa
 L.DomEvent.disableClickPropagation($('.mapctl'));
 L.DomEvent.disableScrollPropagation(layersPop);
 
-// Phone bottom sheet
-$('#btnSheet').addEventListener('click', () => $('#panel').classList.toggle('collapsed'));
 map.attributionControl.addAttribution('Elevation: <a href="https://registry.opendata.aws/terrain-tiles/">AWS Terrain Tiles</a>');
 
 // Rasters live in their own pane beneath vectors so streams and markers stay visible and clickable.
@@ -253,7 +252,7 @@ $('#btnDraw').addEventListener('click', () => {
   drawing = { start: null, rect: null };
   btn.classList.add('active');
   btn.querySelector('span').textContent = 'Drag on map…';
-  if (innerWidth <= 820) $('#panel').classList.add('collapsed');
+  peekPanel();
   map.dragging.disable();
   map.getContainer().classList.add('aoi-drawing');
   toast('Click and drag on the map to draw the analysis area.', false, 3500);
@@ -266,6 +265,7 @@ function stopDraw() {
   const btn = $('#btnDraw');
   btn.classList.remove('active');
   btn.querySelector('span').textContent = 'Draw on map';
+  restorePanel();
 }
 map.on('mousedown', (e) => {
   if (!drawing) return;
@@ -280,7 +280,6 @@ map.on('mouseup', (e) => {
   const b = L.latLngBounds(drawing.start, e.latlng);
   stopDraw();
   lastDraw = Date.now();
-  $('#panel').classList.remove('collapsed');
   if (map.latLngToContainerPoint(b.getNorthWest()).distanceTo(map.latLngToContainerPoint(b.getSouthEast())) < 12) return;
   setAOI(b);
 });
@@ -359,6 +358,8 @@ async function runAnalysis() {
     await showTerrain(res);
     unlock('#stepScenario', '#stepExposure', '#stepLayers');
     $('#stepArea').classList.add('done');
+    foldStep('#stepArea', true);
+    foldStep('#stepScenario', false);
     setProgress(`Done in ${fmt(res.stats.seconds)} s`, 100);
     setTimeout(() => ($('#progress').hidden = true), 1800);
     await runScenario();
