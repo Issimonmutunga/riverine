@@ -89,7 +89,7 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .brand .titles { flex: 1; min-width: 0; }
 .brand h1 { margin: 0; }
 .brand p { margin: 0; color: var(--muted); font-size: 12.5px; }
-/* Wordmark: heavy display type with blue water filling the letters up to a moving waterline */
+/* Wordmark: heavy display type with blue water filling the letters up to a waterline */
 .brand h1.wordmark {
   display: inline-block;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
@@ -102,16 +102,7 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
   background-repeat: repeat-x, no-repeat;
   background-size: 48px 100%, 100% 100%;
   -webkit-background-clip: text; background-clip: text;
-  animation: tide 5s linear infinite;
 }
-@keyframes tide { to { background-position: 48px 0, 0 0; } }
-.maker {
-  display: inline-block; margin-top: 6px; padding: 2px 9px;
-  border-radius: 99px; border: 1px solid var(--line); background: var(--accent-soft);
-  color: var(--accent); font-size: 11px; font-weight: 600; letter-spacing: .02em;
-  text-decoration: none; transition: background .15s;
-}
-.maker:hover { background: var(--fill-hover); }
 .credits a { color: var(--muted); }
 
 /* ---------- Search ---------- */
@@ -442,7 +433,6 @@ dialog .close { position: sticky; top: 14px; float: right; margin: 14px 14px 0 0
   .brand { padding: 18px 16px 8px; }
   .brand p { display: none; }
   .brand h1.wordmark { font-size: 26px; }
-  .maker { margin-top: 2px; }
   /* On the sheet the arrow points the way it will move: down to tuck away, up to open. */
   .brand .sheet-toggle svg { transform: rotate(90deg); }
   #panel.shut .sheet-toggle svg { transform: rotate(-90deg); }
