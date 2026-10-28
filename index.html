@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Riverine — terrain-only flood exposure</title>
+  <title>Flood Depths — terrain-only flood exposure</title>
   <meta name="description" content="Map flood extent, depth, probability and exposed assets anywhere on Earth from a free global DEM, using HAND and synthetic rating curves.">
   <meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
@@ -28,11 +28,8 @@
 
   <aside id="panel">
     <header class="brand">
-      <div class="logo" aria-hidden="true">
-        <svg viewBox="0 0 32 32"><path d="M3 22c4 0 4-3 8-3s4 3 8 3 4-3 8-3" /><path d="M3 27c4 0 4-3 8-3s4 3 8 3 4-3 8-3" /><path d="M9 15 16 4l7 11" /></svg>
-      </div>
       <div class="titles">
-        <h1>Riverine</h1>
+        <h1 class="wordmark">Flood Depths</h1>
         <p>Flood exposure from terrain alone</p>
       </div>
       <button class="icon" id="btnMethod" title="How it works" aria-label="How it works"><svg><use href="#i-info"/></svg></button>
@@ -249,8 +246,8 @@
 <dialog id="method">
   <form method="dialog"><button class="icon close" aria-label="Close"><svg><use href="#i-close"/></svg></button></form>
   <article>
-    <h2>How Riverine works</h2>
-    <p>Riverine answers one question: <em>for a given flood, which ground goes under water, how deep, how sure are we, and what is there?</em>
+    <h2>How Flood Depths works</h2>
+    <p>Flood Depths answers one question: <em>for a given flood, which ground goes under water, how deep, how sure are we, and what is there?</em>
       The only required input is a digital elevation model (DEM), which is freely available for the whole planet. That makes it usable in places with no gauges, surveys or hydraulic models.</p>
 
     <h3>1 · Hydrologically conditioned terrain</h3>
@@ -271,7 +268,7 @@
     </ul>
 
     <h3>5 · Uncertainty</h3>
-    <p>Global DEMs have metre-scale vertical error. Riverine treats HAND error as Gaussian with standard deviation σ, so the inundation probability is <i>P = Φ((h − HAND)/σ)</i>. The P = 0.5 contour equals the deterministic extent. Suggested σ: 0.5 m for LiDAR, 1–2 m for Copernicus/FABDEM, 2–4 m for SRTM in vegetated or urban terrain.</p>
+    <p>Global DEMs have metre-scale vertical error. Flood Depths treats HAND error as Gaussian with standard deviation σ, so the inundation probability is <i>P = Φ((h − HAND)/σ)</i>. The P = 0.5 contour equals the deterministic extent. Suggested σ: 0.5 m for LiDAR, 1–2 m for Copernicus/FABDEM, 2–4 m for SRTM in vegetated or urban terrain.</p>
 
     <h3>6 · Exposure</h3>
     <p>Buildings and facilities come from OpenStreetMap. In much of the Global South they are available thanks to Humanitarian OpenStreetMap Team mapping. Each one is sampled for depth and probability.</p>

@@ -1,4 +1,4 @@
-// Riverine UI: map, area selection, worker orchestration, exposure and exports.
+// Flood Depths UI: map, area selection, worker orchestration, exposure and exports.
 import * as G from './geo.js';
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -679,7 +679,7 @@ function renderLegend(want) {
 $$('[data-export]').forEach((b) => b.addEventListener('click', async () => {
   try {
     const { buffer } = await call({ type: 'export', layer: b.dataset.export });
-    download(`riverine_${b.dataset.export}.tif`, buffer, 'image/tiff');
+    download(`flood_depths_${b.dataset.export}.tif`, buffer, 'image/tiff');
   } catch (err) { toast(err.message, true); }
 }));
 
@@ -689,7 +689,7 @@ $('#expReaches').addEventListener('click', () => {
   const n = sc?.params.n ?? +$('#manning').value;
   const fc = {
     type: 'FeatureCollection',
-    metadata: { generator: 'Riverine', manning_n: n, stages_m: a.stages, scenario: sc ? { mode: sc.mode, ...sc.params } : null },
+    metadata: { generator: 'Flood Depths', manning_n: n, stages_m: a.stages, scenario: sc ? { mode: sc.mode, ...sc.params } : null },
     features: a.reaches.map((r) => ({
       type: 'Feature',
       geometry: { type: 'LineString', coordinates: r.line.map(([lat, lon]) => [lon, lat]) },
@@ -700,7 +700,7 @@ $('#expReaches').addEventListener('click', () => {
       },
     })),
   };
-  download('riverine_reaches.geojson', JSON.stringify(fc), 'application/geo+json');
+  download('flood_depths_reaches.geojson', JSON.stringify(fc), 'application/geo+json');
 });
 
 $('#expExposure').addEventListener('click', () => {
@@ -708,10 +708,10 @@ $('#expExposure').addEventListener('click', () => {
   if (!ex) return toast('Find exposed buildings first.', true);
   const rows = [['osm_id', 'kind', 'name', 'lat', 'lon', 'depth_m', 'probability']];
   for (const f of ex.feats) rows.push([f.id, f.kind, `"${(f.name || '').replace(/"/g, '""')}"`, f.lat.toFixed(6), f.lon.toFixed(6), f.depth.toFixed(2), f.prob.toFixed(3)]);
-  download('riverine_exposure.csv', rows.map((r) => r.join(',')).join('\n'), 'text/csv');
+  download('flood_depths_exposure.csv', rows.map((r) => r.join(',')).join('\n'), 'text/csv');
 });
 
 $('#btnMethod').addEventListener('click', () => $('#method').showModal());
 
-// Console access for power users: riverine.state.analysis, riverine.map, …
-window.riverine = { map, state };
+// Console access for power users: floodDepths.state.analysis, floodDepths.map, …
+window.floodDepths = { map, state };

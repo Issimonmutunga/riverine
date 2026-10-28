@@ -1,8 +1,8 @@
-# Riverine: flood exposure from terrain alone
+# Flood Depths: flood exposure from terrain alone
 
 **The problem:** in most of the world, nobody can say which ground floods, how deep, how likely, and what's on it. The reason is missing data: no river gauges, no surveyed cross-sections, no hydraulic models.
 
-**The tool:** Riverine answers those questions in a browser, for any place on Earth, from a single free global elevation model. Where better data exists (a LiDAR DEM, one gauged discharge, a local rainfall statistic), it plugs straight in.
+**The tool:** Flood Depths answers those questions in a browser, for any place on Earth, from a single free global elevation model. Where better data exists (a LiDAR DEM, one gauged discharge, a local rainfall statistic), it plugs straight in.
 
 The same question matters across sectors:
 

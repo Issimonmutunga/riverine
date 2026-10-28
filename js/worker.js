@@ -1,4 +1,4 @@
-// Riverine analysis worker: loads a DEM onto a Web-Mercator pixel grid, runs the
+// Flood Depths analysis worker: loads a DEM onto a Web-Mercator pixel grid, runs the
 // terrain/hydrology pipeline once, then answers fast flood-scenario queries.
 import * as G from './geo.js';
 import * as Hy from './hydro.js';
