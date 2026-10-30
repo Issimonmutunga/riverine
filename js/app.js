@@ -789,14 +789,14 @@ function stopLocate() {
   me.marker = me.circle = null;
   locBtn.classList.remove('busy', 'active');
   locBtn.setAttribute('aria-pressed', 'false');
-  meAlert.hidden = true;
+  meAlert.hidden = alertBtn.hidden = true;
 }
 
 function drawMe(acc) {
   if (!me.marker) {
     me.circle = L.circle(me.latlng, { radius: acc, color: ACCENT, weight: 1, opacity: 0.4, fillColor: ACCENT, fillOpacity: 0.1, interactive: false }).addTo(map);
     me.marker = L.circleMarker(me.latlng, { radius: 7, color: '#fff', weight: 3, fillColor: ACCENT, fillOpacity: 1, bubblingMouseEvents: false })
-      .on('click', () => { me.dismissed = null; checkMe(); })
+      .on('click', () => { me.dismissed = null; showAlert(true); })
       .addTo(map);
   } else {
     me.marker.setLatLng(me.latlng);
@@ -815,28 +815,42 @@ function firstFix(ll) {
   toast('Analysis area set around you. Tap “Analyze terrain” to check your flood risk.', false, 6000);
 }
 
+// Numbers offered with a flood alert: in Kenya the Red Cross toll-free line and the national emergency line,
+// elsewhere 112, which reaches emergency services from most mobile phones.
+function hotlines(ll) {
+  const kenya = ll.lat > -4.72 && ll.lat < 5.03 && ll.lng > 33.9 && ll.lng < 41.91;
+  return kenya ? [['Kenya Red Cross', '1199'], ['Emergency', '999']] : [['Emergency', '112']];
+}
+
 async function checkMe() {
   if (!me.latlng) return;
   const gen = ++me.gen;
-  let level, html, text = '';
+  let level, mark = '', title, detail, text = '';
   if (!state.scenario) {
     level = 'none';
-    html = '<span>Your location is shown. Analyze an area that includes it to get flood alerts here.</span>';
+    title = 'Location on';
+    detail = 'Analyze an area that includes you to get flood alerts here.';
   } else {
     let v = null;
     try { ({ values: [v] } = await call({ type: 'sample', points: [[me.latlng.lat, me.latlng.lng]] })); } catch { return; }
     if (gen !== me.gen) return;
     if (!v) {
       level = 'out';
-      html = '<span>You are outside the analysed area, so there is no alert for your location.</span>';
+      title = 'No alert for your location';
+      detail = 'You are outside the analysed area.';
     } else if (!(v.depth > 0) && v.prob < 0.05) {
       level = 'dry';
-      html = '<span class="dot" style="background:#34c759"></span><span><b>Your location stays dry</b> in this scenario.</span>';
+      mark = '<span class="badge" style="background:#34c759">Dry</span>';
+      title = 'Your location stays dry';
+      detail = 'It does not flood in the scenario you have set.';
     } else {
       const sev = severity(v.depth);
       level = sev.label === 'Dangerous' ? 'danger' : 'wet';
-      text = `Your location: ${v.depth > 0 ? `${depthText(v.depth)} deep` : 'at the flood edge'} · ${Math.round(v.prob * 100)}% chance of flooding`;
-      html = `<span class="badge" style="background:${sev.color}">${sev.label}</span><span><b>${text.split(' · ')[0]}</b> · ${text.split(' · ')[1]}</span>`;
+      mark = `<span class="badge" style="background:${sev.color}">${sev.label}</span>`;
+      title = v.depth > 0 ? `${depthText(v.depth)} deep at your location` : 'Your location is at the flood edge';
+      detail = `${Math.round(v.prob * 100)}% chance of flooding in this scenario.`
+        + (level === 'danger' ? ' Move to higher ground and follow official guidance.' : '');
+      text = `${title} · ${detail}`;
     }
   }
   const changed = level !== me.level;
@@ -846,15 +860,30 @@ async function checkMe() {
   me.level = level;
   if (changed) me.dismissed = null;
   const canNotify = 'Notification' in window && Notification.permission !== 'denied' && !me.notify && level !== 'none';
+  const calls = level === 'danger' || level === 'wet'
+    ? hotlines(me.latlng).map(([name, num]) => `<a class="hotline" href="tel:${num}"><svg><use href="#i-phone"/></svg>${name} <b>${num}</b></a>`).join('')
+    : '';
   meAlert.className = `me-alert ${level}`;
-  meAlert.innerHTML = `${html}
-    ${canNotify ? '<button class="icon" data-act="notify" title="Notify me if it becomes dangerous" aria-label="Notify me if my location becomes dangerous"><svg><use href="#i-bell"/></svg></button>' : ''}
-    <button class="icon" data-act="close" aria-label="Dismiss"><svg><use href="#i-close"/></svg></button>`;
-  meAlert.hidden = me.dismissed === level;
+  meAlert.innerHTML = `
+    <div class="me-head">${mark}<b>${title}</b>
+      <button class="icon" data-act="close" title="Dismiss" aria-label="Dismiss alert"><svg><use href="#i-close"/></svg></button></div>
+    <p>${detail}</p>
+    ${calls || canNotify ? `<div class="me-actions">${calls}
+      ${canNotify ? '<button class="chip" data-act="notify"><svg><use href="#i-bell"/></svg>Notify me</button>' : ''}</div>` : ''}`;
+  showAlert(me.dismissed !== level);
 }
+
+// The callout hangs from the location button; dismissed, it shrinks to a small alert icon below it.
+const alertBtn = $('#btnAlert');
+function showAlert(open) {
+  meAlert.hidden = !open;
+  alertBtn.hidden = open || !me.latlng;
+  alertBtn.className = `fab mini ${me.level || ''}`;
+}
+alertBtn.addEventListener('click', () => { me.dismissed = null; showAlert(true); });
 meAlert.addEventListener('click', async (e) => {
   const act = e.target.closest('button')?.dataset.act;
-  if (act === 'close') { me.dismissed = me.level; meAlert.hidden = true; }
+  if (act === 'close') { me.dismissed = me.level; showAlert(false); }
   if (act === 'notify') {
     me.notify = (await Notification.requestPermission()) === 'granted';
     toast(me.notify ? 'You’ll get a notification if your location turns dangerous while this tab is in the background.' : 'Notifications were not allowed.', !me.notify);
