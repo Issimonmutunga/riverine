@@ -386,6 +386,7 @@ async function runAnalysis() {
     foldStep('#stepScenario', false);
     setProgress(`Done in ${fmt(res.stats.seconds)} s`, 100);
     setTimeout(() => ($('#progress').hidden = true), 1800);
+    loadOutlook();
     await runScenario();
     $('#stepScenario').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (err) {
@@ -413,6 +414,8 @@ async function fetchRivers(b) {
 }
 
 function clearResults() {
+  outlookFor = null;
+  $('#outlook').hidden = true;
   // Uploaded shapes are the user's own data, so they outlive a new analysis; only their flood results reset.
   for (const k of Object.keys(state.layers)) {
     if (k === 'shapes') continue;
@@ -791,6 +794,162 @@ async function sampleExposure() {
   }
 }
 
+// ---------------- Outlook: river and rain forecasts to ground the scenario ----------------
+// River discharge comes from Copernicus GloFAS and rain from weather models, both via Open-Meteo
+// (free, no key). They are model forecasts on a ~5 km grid, so the card points to official warnings too.
+const inKenya = (ll) => ll.lat > -4.72 && ll.lat < 5.03 && ll.lng > 33.9 && ll.lng < 41.91;
+const isoDay = (d) => d.toISOString().slice(0, 10);
+function dayName(iso, short = false) {
+  const days = Math.round((Date.parse(`${iso}T12:00Z`) - Date.parse(`${isoDay(new Date())}T12:00Z`)) / 864e5);
+  if (days === 0) return 'today';
+  if (days === 1) return 'tomorrow';
+  return new Date(`${iso}T12:00Z`).toLocaleDateString(undefined, short ? { weekday: 'short' } : { weekday: 'short', day: 'numeric', month: 'short' });
+}
+async function getJSON(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+let outlookFor = null;
+async function loadOutlook() {
+  const a = state.analysis;
+  if (!a?.reaches.length) return;
+  const key = JSON.stringify(a.grid.bounds);
+  if (outlookFor === key) return;
+  outlookFor = key;
+  const box = $('#outlook');
+  box.hidden = false;
+  box.dataset.level = '';
+  $('#olSummary').textContent = 'Checking river and rain forecasts…';
+  $('#olBody').innerHTML = '';
+  const g = a.grid.bounds;
+  const center = L.latLng((g.s + g.n) / 2, (g.w + g.e) / 2);
+  const [river, rain] = await Promise.allSettled([riverOutlook(a.reaches), rainOutlook(center)]);
+  if (outlookFor !== key) return;
+  if (river.status === 'rejected') console.warn('River outlook failed:', river.reason);
+  if (rain.status === 'rejected') console.warn('Rain outlook failed:', rain.reason);
+  renderOutlook(river.value, rain.value, center);
+}
+
+async function riverOutlook(reaches) {
+  // GloFAS snaps to its own 5 km river network, so try cells along the main reach and around its outlet
+  // and keep the one carrying the most water: that is the main river.
+  const main = reaches.reduce((x, r) => (r.areaKm2 > x.areaKm2 ? r : x));
+  const n = main.line.length, cands = [];
+  for (let k = 0; k < 8; k++) cands.push(main.line[Math.round(k * (n - 1) / 7)]);
+  const [olat, olon] = main.line[n - 1];
+  for (const dy of [-0.05, 0, 0.05]) for (const dx of [-0.05, 0, 0.05]) cands.push([olat + dy, olon + dx]);
+  const coords = (i) => cands.map((c) => c[i].toFixed(4)).join(',');
+  const found = [].concat(await getJSON(`https://flood-api.open-meteo.com/v1/flood?latitude=${coords(0)}&longitude=${coords(1)}&daily=river_discharge_median&past_days=7&forecast_days=1`));
+  const best = found.reduce((b, r) => {
+    const m = Math.max(0, ...r.daily.river_discharge_median.filter(Number.isFinite));
+    return m > b.m ? { m, r } : b;
+  }, { m: 0, r: null });
+  if (!best.r) return null;
+
+  const today = new Date(), start = new Date(today), end = new Date(today);
+  start.setUTCFullYear(start.getUTCFullYear() - 3);
+  end.setUTCDate(end.getUTCDate() + 9);
+  const h = await getJSON(`https://flood-api.open-meteo.com/v1/flood?latitude=${best.r.latitude}&longitude=${best.r.longitude}&daily=river_discharge,river_discharge_max&start_date=${isoDay(start)}&end_date=${isoDay(end)}`);
+  const t = h.daily.time, q = h.daily.river_discharge, qmax = h.daily.river_discharge_max || [];
+  let iNow = t.indexOf(isoDay(today));
+  if (iNow < 0) iNow = t.length - 10;
+  const past = q.slice(0, iNow).filter(Number.isFinite).sort((x, y) => x - y);
+  if (past.length < 100) return null;
+  const pct = (p) => past[Math.min(past.length - 1, Math.floor(p * past.length))];
+  let iPeak = iNow, upper = 0;
+  for (let i = iNow; i < q.length; i++) {
+    if (q[i] > q[iPeak]) iPeak = i;
+    if (Number.isFinite(qmax[i])) upper = Math.max(upper, qmax[i]);
+  }
+  return {
+    now: q[iNow], peak: q[iPeak], peakDay: t[iPeak], upper,
+    p20: pct(0.2), median: pct(0.5), p80: pct(0.8), high: pct(0.95), max: past[past.length - 1],
+    series: q.slice(Math.max(0, iNow - 60)), today: Math.min(60, iNow),
+  };
+}
+
+async function rainOutlook(c) {
+  const r = await getJSON(`https://api.open-meteo.com/v1/forecast?latitude=${c.lat.toFixed(3)}&longitude=${c.lng.toFixed(3)}&daily=precipitation_sum&forecast_days=7&timezone=auto`);
+  const mm = r.daily.precipitation_sum, t = r.daily.time;
+  const i = mm.reduce((b, v, k) => (v > mm[b] ? k : b), 0);
+  return { max: mm[i], day: t[i], total: mm.reduce((s, v) => s + (v || 0), 0) };
+}
+
+// How the coming peak compares with this river's last three years.
+function flowLevel(v, r) {
+  if (v >= r.max) return { label: 'Highest in 3 years', tone: 'danger' };
+  if (v >= r.high) return { label: 'High', tone: 'danger' };
+  if (v >= r.p80) return { label: 'Above usual', tone: 'warn' };
+  if (v >= r.p20) return { label: 'Usual', tone: 'ok' };
+  return { label: 'Low', tone: 'ok' };
+}
+function rainLevel(mm) {
+  if (mm >= 50) return { label: 'Heavy rain', tone: 'danger' };
+  if (mm >= 20) return { label: 'Moderate rain', tone: 'warn' };
+  return { label: mm >= 1 ? 'Light rain' : 'Mostly dry', tone: 'ok' };
+}
+
+function sparkline(r) {
+  const W = 280, H = 44, v = r.series, top = Math.max(r.high, ...v.filter(Number.isFinite)) * 1.08 || 1;
+  const x = (i) => (i / (v.length - 1)) * W, y = (q) => H - 2 - (q / top) * (H - 4);
+  const path = (from, to) => v.slice(from, to + 1).map((q, k) => `${k ? 'L' : 'M'}${x(from + k).toFixed(1)},${y(q).toFixed(1)}`).join('');
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="River flow over the last two months and the next ten days">
+    <line class="hi" x1="0" x2="${W}" y1="${y(r.high)}" y2="${y(r.high)}"/>
+    <line class="now" x1="${x(r.today)}" x2="${x(r.today)}" y1="0" y2="${H}"/>
+    <path class="past" d="${path(0, r.today)}"/><path class="next" d="${path(r.today, v.length - 1)}"/></svg>`;
+}
+
+function renderOutlook(river, rain, center) {
+  const box = $('#outlook'), body = $('#olBody');
+  const parts = [], rows = [];
+  let tone = 'ok';
+  const worse = (t) => { if (t === 'danger' || (t === 'warn' && tone === 'ok')) tone = t; };
+  if (river) {
+    const lv = flowLevel(river.peak, river);
+    worse(lv.tone);
+    parts.push(`River ${lv.label.toLowerCase()}`);
+    const chip = (label, q) => `<button class="chip" data-flow="${Math.round(q)}">${label} <b>${fmtInt(q)}</b></button>`;
+    rows.push(`<div class="ol-row">
+      <div class="ol-top"><span>Main river</span><b>${fmtInt(river.now)} m³/s now</b><span class="lvl ${lv.tone}">${lv.label}</span></div>
+      ${sparkline(river)}
+      <p class="hint">Peak ${fmtInt(river.peak)} m³/s ${dayName(river.peakDay)}${river.upper > river.peak * 1.15 ? `, possibly up to ${fmtInt(river.upper)}` : ''}. Usual ${fmtInt(river.median)}, high ${fmtInt(river.high)} (dashed).</p>
+      <div class="ol-use"><span>Try as discharge</span>${chip('Forecast peak', river.peak)}${chip('High flow', river.high)}${chip('3-yr max', river.max)}</div>
+    </div>`);
+  }
+  if (rain) {
+    const lv = rainLevel(rain.max);
+    worse(lv.tone);
+    parts.push(rain.max >= 1 ? `${fmt(rain.max, 0)} mm rain ${dayName(rain.day, true)}` : 'little rain ahead');
+    rows.push(`<div class="ol-row">
+      <div class="ol-top"><span>Rain, next 7 days</span><b>${fmt(rain.max, 0)} mm</b><span class="lvl ${lv.tone}">${lv.label}</span></div>
+      <p class="hint">Wettest day: ${dayName(rain.day)} · ${fmt(rain.total, 0)} mm in total.</p>
+      ${rain.max >= 1 ? `<div class="ol-use"><span>Try as rainfall</span><button class="chip" data-rain="${Math.round(rain.max)}">Wettest day <b>${fmt(rain.max, 0)} mm</b></button></div>` : ''}
+    </div>`);
+  }
+  const links = [
+    ...(inKenya(center) ? [['Kenya Met Dept', 'https://meteo.go.ke'], ['ICPAC', 'https://www.icpac.net']] : []),
+    ['GDACS', 'https://www.gdacs.org'], ['GloFAS', 'https://global-flood.emergency.copernicus.eu'],
+  ].map(([name, url]) => `<a href="${url}" target="_blank" rel="noopener">${name}</a>`).join(' · ');
+  box.dataset.level = parts.length ? tone : '';
+  $('#olSummary').textContent = parts.length ? parts.join(' · ') : 'Forecasts are unavailable right now.';
+  body.innerHTML = `${rows.join('')}
+    <p class="ol-foot">Model forecasts (GloFAS and weather models via Open-Meteo), not official warnings. For warnings: ${links}.</p>`;
+}
+
+$('#olBody').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.dataset.flow) {
+    $('#qref').value = b.dataset.flow;
+    $('#modeTabs [data-mode=flow]').click();
+  } else if (b.dataset.rain) {
+    $('#p24').value = b.dataset.rain;
+    $('#modeTabs [data-mode=rain]').click();
+  }
+});
+
 // ---------------- My location & alerts ----------------
 const me = { watch: null, latlng: null, marker: null, circle: null, level: null, dismissed: null, notify: false, gen: 0 };
 const locBtn = $('#btnLocate'), meAlert = $('#meAlert');
@@ -855,8 +1014,7 @@ function firstFix(ll) {
 // Numbers offered with a flood alert: in Kenya the Red Cross toll-free line and the national emergency line,
 // elsewhere 112, which reaches emergency services from most mobile phones.
 function hotlines(ll) {
-  const kenya = ll.lat > -4.72 && ll.lat < 5.03 && ll.lng > 33.9 && ll.lng < 41.91;
-  return kenya ? [['Kenya Red Cross', '1199'], ['Emergency', '999']] : [['Emergency', '112']];
+  return inKenya(ll) ? [['Kenya Red Cross', '1199'], ['Emergency', '999']] : [['Emergency', '112']];
 }
 
 async function checkMe() {

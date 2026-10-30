@@ -528,3 +528,42 @@ h3.sub { margin: 18px 0 0; font-size: 13px; font-weight: 600; overflow: hidden; 
   .me-alert { width: min(300px, calc(100vw - 24px)); }
   .dropzone small { display: none; }
 }
+
+/* ---------- Forecast outlook ---------- */
+.outlook { margin: 0 0 14px; border-radius: 12px; background: var(--fill); }
+.outlook summary {
+  list-style: none; cursor: pointer; user-select: none; display: flex; align-items: center; gap: 8px;
+  padding: 9px 12px; font-size: 13px; font-weight: 550;
+}
+.outlook summary::-webkit-details-marker { display: none; }
+.outlook summary::after {
+  content: ""; margin-left: auto; width: 7px; height: 7px; flex: none; border: solid var(--muted); border-width: 0 1.8px 1.8px 0;
+  transform: rotate(45deg) translate(-2px, -2px); transition: transform .2s var(--ease);
+}
+.outlook[open] summary::after { transform: rotate(-135deg) translate(-2px, -2px); }
+.ol-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--faint); }
+.outlook[data-level=ok] .ol-dot { background: #34c759; }
+.outlook[data-level=warn] .ol-dot { background: #ff9f0a; }
+.outlook[data-level=danger] .ol-dot { background: #e0301e; }
+#olBody { padding: 0 12px 10px; }
+.ol-row { padding: 10px 0; border-top: 1px solid var(--line); }
+.ol-top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+.ol-top > span:first-child { color: var(--muted); margin-right: auto; }
+.ol-top b { font-variant-numeric: tabular-nums; }
+.lvl { font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 99px; background: var(--fill-hover); color: var(--muted); }
+.lvl.warn { background: rgb(255 159 10 / 18%); color: var(--warn); }
+.lvl.danger { background: rgb(224 48 30 / 14%); color: var(--danger); }
+.spark { display: block; width: 100%; height: 44px; margin: 8px 0 2px; }
+.spark path { fill: none; stroke-width: 1.8; vector-effect: non-scaling-stroke; }
+.spark .past { stroke: var(--accent); }
+.spark .next { stroke: var(--accent); stroke-dasharray: 3 3; }
+.spark .hi { stroke: #e0301e; stroke-opacity: .45; stroke-dasharray: 2 4; vector-effect: non-scaling-stroke; }
+.spark .now { stroke: var(--faint); vector-effect: non-scaling-stroke; }
+.ol-row .hint { margin: 4px 0 6px; }
+.ol-use { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.ol-use > span { font-size: 12px; color: var(--muted); width: 100%; }
+.ol-use .chip { background: var(--solid); box-shadow: var(--shadow-sm); }
+.ol-use .chip b { font-variant-numeric: tabular-nums; color: var(--accent); }
+.ol-foot { margin: 8px 0 0; padding-top: 8px; border-top: 1px solid var(--line); font-size: 11.5px; color: var(--muted); }
+.ol-foot a { color: var(--accent); text-decoration: none; }
+.ol-foot a:hover { text-decoration: underline; }
