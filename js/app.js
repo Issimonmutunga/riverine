@@ -82,7 +82,8 @@ async function overpass(query, timeoutMs, onTry) {
       clearTimeout(timer);
     }
   }
-  throw new Error(`All Overpass servers failed (${errors.join('; ')})`);
+  console.warn('Overpass failed:', errors.join('; '));
+  throw new Error('OpenStreetMap is busy right now. Try again in a minute.');
 }
 const vecRenderer = L.canvas({ padding: 0.3, tolerance: 6 });
 
@@ -110,7 +111,7 @@ worker.onmessage = (ev) => {
   if (m.type === 'error') p.reject(new Error(m.message));
   else p.resolve(m);
 };
-worker.onerror = (e) => toast(`Worker error: ${e.message}`, true);
+worker.onerror = (e) => { console.error(e); toast('Something went wrong. Reload the page and try again.', 'error'); };
 function call(msg, transfer = []) {
   const id = ++rpcId;
   return new Promise((resolve, reject) => {
@@ -120,18 +121,27 @@ function call(msg, transfer = []) {
 }
 
 // ---------------- UI helpers ----------------
+// Toasts are short and calm: 'info' for guidance, 'notice' for something the app worked around,
+// 'error' for something the user has to act on. Technical detail goes to the console, not the screen.
 let toastTimer;
-function toast(msg, error = false, ms = 4500) {
+function toast(msg, kind = 'info', ms) {
+  if (kind === true) kind = 'error';
+  else if (kind === false) kind = 'info';
+  ms ??= kind === 'info' ? 4500 : 6500;
   const t = $('#toast');
-  t.textContent = msg;
-  t.classList.toggle('error', error);
+  t.className = `toast ${kind}`;
+  t.innerHTML = `<svg><use href="#i-${kind === 'info' ? 'info' : 'alert'}"/></svg><span></span>
+    <button class="icon" aria-label="Dismiss"><svg><use href="#i-close"/></svg></button>`;
+  t.querySelector('span').textContent = msg;
   t.hidden = false;
   clearTimeout(toastTimer);
   if (ms) toastTimer = setTimeout(() => (t.hidden = true), ms);
 }
+$('#toast').addEventListener('click', () => { clearTimeout(toastTimer); $('#toast').hidden = true; });
 function setProgress(msg, pct) {
   const p = $('#progress');
   p.hidden = false;
+  p.classList.remove('failed');
   p.querySelector('.bar').style.setProperty('--p', `${pct}%`);
   p.querySelector('.msg').textContent = msg;
 }
@@ -380,7 +390,11 @@ async function runAnalysis() {
     $('#stepScenario').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (err) {
     setProgress(err.message, 0);
-    toast(err.message, true, 8000);
+    $('#progress').classList.add('failed');
+    // Show the reason where the user acted, and drop any side notice that no longer matters.
+    if ($('#toast').classList.contains('notice')) $('#toast').hidden = true;
+    foldStep('#stepArea', false);
+    $('#progress').scrollIntoView({ behavior: 'smooth', block: 'center' });
   } finally {
     btn.disabled = false;
     btn.textContent = 'Analyze terrain';
@@ -390,10 +404,10 @@ async function runAnalysis() {
 async function fetchRivers(b) {
   const q = `[out:json][timeout:25];way["waterway"~"^(river|canal)$"](${b.s},${b.w},${b.n},${b.e});out geom;`;
   try {
-    const json = await overpass(q, 30000, (host) => setProgress(`Fetching mapped rivers (${host})`, 3));
+    const json = await overpass(q, 30000, () => setProgress('Fetching mapped rivers…', 3));
     return json.elements.filter((e) => e.geometry).map((e) => e.geometry.map((p) => [p.lat, p.lon]));
   } catch (err) {
-    toast(`River lines unavailable. Continuing with the DEM alone. ${err.message}`, true, 8000);
+    toast('Mapped rivers didn’t load, so streams are traced from the terrain alone.', 'notice');
     return [];
   }
 }
@@ -706,7 +720,7 @@ $('#btnExposure').addEventListener('click', async () => {
   const am = 'hospital|clinic|doctors|health_post|pharmacy|school|college|university|kindergarten|police|fire_station|shelter|townhall|community_centre|marketplace|water_point|drinking_water';
   const q = `[out:json][timeout:120];(way["building"](${bb});node["amenity"~"^(${am})$"](${bb});way["amenity"~"^(${am})$"](${bb}););out tags center 80000;`;
   try {
-    const json = await overpass(q, 120000, (host) => { btn.textContent = `Querying OpenStreetMap (${host})…`; });
+    const json = await overpass(q, 120000, () => { btn.textContent = 'Querying OpenStreetMap…'; });
     const feats = [];
     const seen = new Set();
     for (const el of json.elements) {
@@ -721,7 +735,7 @@ $('#btnExposure').addEventListener('click', async () => {
     await sampleExposure();
     if (!feats.length) toast('No buildings are mapped in OpenStreetMap here yet. You can help at tasks.hotosm.org.', false, 8000);
   } catch (err) {
-    toast(err.message, true, 8000);
+    toast(err.message, 'error');
   } finally {
     btn.disabled = false; btn.textContent = 'Refresh exposure';
   }
@@ -783,8 +797,8 @@ const locBtn = $('#btnLocate'), meAlert = $('#meAlert');
 locBtn.addEventListener('click', () => (me.watch != null ? stopLocate() : startLocate()));
 
 function startLocate() {
-  if (!('geolocation' in navigator)) return toast('Location is not available in this browser.', true);
-  if (!isSecureContext) return toast('Location needs a secure (https) connection.', true);
+  if (!('geolocation' in navigator)) return toast('This browser can’t share your location.', 'notice');
+  if (!isSecureContext) return toast('Location needs a secure (https) connection.', 'notice');
   locBtn.classList.add('busy');
   locBtn.setAttribute('aria-pressed', 'true');
   let first = true;
@@ -799,8 +813,8 @@ function startLocate() {
     checkMe();
   }, (err) => {
     toast(err.code === err.PERMISSION_DENIED
-      ? 'Location access was blocked. Allow it for this site in your browser settings to get flood alerts.'
-      : `Couldn’t find your location (${err.message}).`, true, 8000);
+      ? 'Location is off. Allow it in your browser’s site settings to get flood alerts.'
+      : 'Couldn’t find your location. Try again outdoors or with Wi-Fi on.', 'notice');
     stopLocate();
   }, { enableHighAccuracy: true, maximumAge: 30000, timeout: 20000 });
 }
@@ -909,7 +923,7 @@ meAlert.addEventListener('click', async (e) => {
   if (act === 'close') { me.dismissed = me.level; showAlert(false); }
   if (act === 'notify') {
     me.notify = (await Notification.requestPermission()) === 'granted';
-    toast(me.notify ? 'You’ll get a notification if your location turns dangerous while this tab is in the background.' : 'Notifications were not allowed.', !me.notify);
+    toast(me.notify ? 'You’ll get a notification if your location turns dangerous while this tab is in the background.' : 'Notifications are off for this site.', me.notify ? 'info' : 'notice');
     checkMe();
   }
 });
@@ -1012,6 +1026,7 @@ function shapeName(f, i) {
 async function loadShapes(files) {
   const info = $('#shapesInfo');
   info.hidden = false;
+  info.classList.remove('err');
   info.textContent = 'Reading…';
   try {
     const { name, feats: raw } = await readShapes(files);
@@ -1040,7 +1055,7 @@ async function loadShapes(files) {
     }
   } catch (err) {
     info.textContent = err.message;
-    toast(err.message, true, 8000);
+    info.classList.add('err');
   }
 }
 $('#fileShapes').addEventListener('change', (e) => { if (e.target.files.length) loadShapes(e.target.files); e.target.value = ''; });
@@ -1056,7 +1071,7 @@ $('#app').addEventListener('drop', (e) => {
   $('#app').classList.remove('dropping');
   const files = e.dataTransfer.files;
   if (!files.length) return;
-  if ([...files].some((f) => /\.tiff?$/i.test(f.name))) return toast('For a DEM, use Terrain settings → My GeoTIFF.', true);
+  if ([...files].some((f) => /\.tiff?$/i.test(f.name))) return toast('For elevation data, use Terrain settings → My GeoTIFF.', 'notice');
   loadShapes(files);
 });
 
@@ -1241,7 +1256,7 @@ $('#expReaches').addEventListener('click', () => {
 
 $('#expExposure').addEventListener('click', () => {
   const ex = state.exposure;
-  if (!ex) return toast('Find exposed buildings first.', true);
+  if (!ex) return toast('Find exposed buildings first.', 'notice');
   const rows = [['osm_id', 'kind', 'name', 'lat', 'lon', 'depth_m', 'probability']];
   for (const f of ex.feats) rows.push([f.id, f.kind, `"${(f.name || '').replace(/"/g, '""')}"`, f.lat.toFixed(6), f.lon.toFixed(6), f.depth.toFixed(2), f.prob.toFixed(3)]);
   download('flood_depth_exposure.csv', rows.map((r) => r.join(',')).join('\n'), 'text/csv');

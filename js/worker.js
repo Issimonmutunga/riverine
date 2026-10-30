@@ -44,7 +44,7 @@ async function decodeTile(z, tx, ty) {
   if (ty < 0 || ty >= n) return null;
   const wx = ((tx % n) + n) % n;
   const res = await fetch(`${TERRARIUM}/${z}/${wx}/${ty}.png`);
-  if (!res.ok) throw new Error(`Terrain tile ${z}/${wx}/${ty} failed (${res.status})`);
+  if (!res.ok) throw new Error('Couldn’t download elevation data. Check your connection and try again.');
   const bmp = await createImageBitmap(await res.blob(), { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
   const cv = new OffscreenCanvas(G.TILE, G.TILE);
   const ctx = cv.getContext('2d', { willReadFrequently: true });
