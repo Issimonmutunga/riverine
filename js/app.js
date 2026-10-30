@@ -93,7 +93,8 @@ const state = {
   analysis: null,
   scenario: null,
   exposure: null,
-  layers: { hill: null, hand: null, depth: null, prob: null, streams: null, exposure: null },
+  layers: { hill: null, hand: null, depth: null, prob: null, streams: null, exposure: null, shapes: null },
+  shapes: null,
 };
 
 // ---------------- Worker RPC ----------------
@@ -385,12 +386,18 @@ async function fetchRivers(b) {
 }
 
 function clearResults() {
-  for (const k of Object.keys(state.layers)) { state.layers[k]?.remove(); state.layers[k] = null; }
+  // Uploaded shapes are the user's own data, so they outlive a new analysis; only their flood results reset.
+  for (const k of Object.keys(state.layers)) {
+    if (k === 'shapes') continue;
+    state.layers[k]?.remove(); state.layers[k] = null;
+  }
   state.analysis = state.scenario = state.exposure = null;
   $('#terrainStats').hidden = $('#floodStats').hidden = $('#exposureStats').hidden = $('#terrainMore').hidden = true;
   $('#floodWarn').hidden = true;
   $('#facilityList').innerHTML = '';
   $('#legend').hidden = true;
+  clearShapeResults();
+  checkMe();
 }
 
 function rgbaToURL(rgba, W, H) {
@@ -518,6 +525,9 @@ async function restyle() {
     state.scenario.stats.deepKm2 = res.deepKm2;
     showDangerReadout(res.deepKm2);
     await setOverlay('depth', res.depthImg, 230);
+    styleShapes();
+    if (state.shapes?.items[0]?.res) renderShapeSummary();
+    checkMe();
   } catch (err) { toast(err.message, true); }
 }
 const restyleSoon = debounce(restyle, 60);
@@ -556,6 +566,7 @@ async function runScenario() {
     showDangerReadout(s.deepKm2);
     await Promise.all([setOverlay('depth', res.depthImg, 230), setOverlay('prob', res.probImg, 230)]);
     if (state.exposure) await sampleExposure();
+    await Promise.all([checkShapes(), checkMe()]);
   } catch (err) {
     toast(err.message, true);
   } finally {
@@ -743,6 +754,363 @@ async function sampleExposure() {
   }
 }
 
+// ---------------- My location & alerts ----------------
+const me = { watch: null, latlng: null, marker: null, circle: null, level: null, dismissed: null, notify: false, gen: 0 };
+const locBtn = $('#btnLocate'), meAlert = $('#meAlert');
+locBtn.addEventListener('click', () => (me.watch != null ? stopLocate() : startLocate()));
+
+function startLocate() {
+  if (!('geolocation' in navigator)) return toast('Location is not available in this browser.', true);
+  if (!isSecureContext) return toast('Location needs a secure (https) connection.', true);
+  locBtn.classList.add('busy');
+  locBtn.setAttribute('aria-pressed', 'true');
+  let first = true;
+  me.watch = navigator.geolocation.watchPosition((pos) => {
+    me.latlng = L.latLng(pos.coords.latitude, pos.coords.longitude);
+    drawMe(pos.coords.accuracy);
+    if (first) {
+      first = false;
+      locBtn.classList.replace('busy', 'active');
+      firstFix(me.latlng);
+    }
+    checkMe();
+  }, (err) => {
+    toast(err.code === err.PERMISSION_DENIED
+      ? 'Location access was blocked. Allow it for this site in your browser settings to get flood alerts.'
+      : `Couldn’t find your location (${err.message}).`, true, 8000);
+    stopLocate();
+  }, { enableHighAccuracy: true, maximumAge: 30000, timeout: 20000 });
+}
+
+function stopLocate() {
+  if (me.watch != null) navigator.geolocation.clearWatch(me.watch);
+  me.watch = me.latlng = me.level = me.dismissed = null;
+  me.marker?.remove(); me.circle?.remove();
+  me.marker = me.circle = null;
+  locBtn.classList.remove('busy', 'active');
+  locBtn.setAttribute('aria-pressed', 'false');
+  meAlert.hidden = true;
+}
+
+function drawMe(acc) {
+  if (!me.marker) {
+    me.circle = L.circle(me.latlng, { radius: acc, color: ACCENT, weight: 1, opacity: 0.4, fillColor: ACCENT, fillOpacity: 0.1, interactive: false }).addTo(map);
+    me.marker = L.circleMarker(me.latlng, { radius: 7, color: '#fff', weight: 3, fillColor: ACCENT, fillOpacity: 1, bubblingMouseEvents: false })
+      .on('click', () => { me.dismissed = null; checkMe(); })
+      .addTo(map);
+  } else {
+    me.marker.setLatLng(me.latlng);
+    me.circle.setLatLng(me.latlng).setRadius(acc);
+  }
+}
+
+function firstFix(ll) {
+  const inGrid = state.analysis && gridBounds(state.analysis.grid).contains(ll);
+  map.setView(ll, Math.max(map.getZoom(), inGrid ? 14 : 13));
+  if (state.analysis || state.upload || state.aoi?.contains(ll)) return;
+  // No analysis yet: put a ~10 km box around the user so one tap on Analyze checks their area.
+  const dLat = 5 / 110.57, dLon = 5 / (111.32 * Math.cos(ll.lat * Math.PI / 180));
+  setDemSource('global');
+  setAOI(L.latLngBounds([ll.lat - dLat, ll.lng - dLon], [ll.lat + dLat, ll.lng + dLon]));
+  toast('Analysis area set around you. Tap “Analyze terrain” to check your flood risk.', false, 6000);
+}
+
+async function checkMe() {
+  if (!me.latlng) return;
+  const gen = ++me.gen;
+  let level, html, text = '';
+  if (!state.scenario) {
+    level = 'none';
+    html = '<span>Your location is shown. Analyze an area that includes it to get flood alerts here.</span>';
+  } else {
+    let v = null;
+    try { ({ values: [v] } = await call({ type: 'sample', points: [[me.latlng.lat, me.latlng.lng]] })); } catch { return; }
+    if (gen !== me.gen) return;
+    if (!v) {
+      level = 'out';
+      html = '<span>You are outside the analysed area, so there is no alert for your location.</span>';
+    } else if (!(v.depth > 0) && v.prob < 0.05) {
+      level = 'dry';
+      html = '<span class="dot" style="background:#34c759"></span><span><b>Your location stays dry</b> in this scenario.</span>';
+    } else {
+      const sev = severity(v.depth);
+      level = sev.label === 'Dangerous' ? 'danger' : 'wet';
+      text = `Your location: ${v.depth > 0 ? `${depthText(v.depth)} deep` : 'at the flood edge'} · ${Math.round(v.prob * 100)}% chance of flooding`;
+      html = `<span class="badge" style="background:${sev.color}">${sev.label}</span><span><b>${text.split(' · ')[0]}</b> · ${text.split(' · ')[1]}</span>`;
+    }
+  }
+  const changed = level !== me.level;
+  if (changed && level === 'danger' && me.notify && document.hidden) {
+    new Notification('Flood Depth: dangerous depth at your location', { body: text, tag: 'flood-depth-me' });
+  }
+  me.level = level;
+  if (changed) me.dismissed = null;
+  const canNotify = 'Notification' in window && Notification.permission !== 'denied' && !me.notify && level !== 'none';
+  meAlert.className = `me-alert ${level}`;
+  meAlert.innerHTML = `${html}
+    ${canNotify ? '<button class="icon" data-act="notify" title="Notify me if it becomes dangerous" aria-label="Notify me if my location becomes dangerous"><svg><use href="#i-bell"/></svg></button>' : ''}
+    <button class="icon" data-act="close" aria-label="Dismiss"><svg><use href="#i-close"/></svg></button>`;
+  meAlert.hidden = me.dismissed === level;
+}
+meAlert.addEventListener('click', async (e) => {
+  const act = e.target.closest('button')?.dataset.act;
+  if (act === 'close') { me.dismissed = me.level; meAlert.hidden = true; }
+  if (act === 'notify') {
+    me.notify = (await Notification.requestPermission()) === 'granted';
+    toast(me.notify ? 'You’ll get a notification if your location turns dangerous while this tab is in the background.' : 'Notifications were not allowed.', !me.notify);
+    checkMe();
+  }
+});
+
+// ---------------- Your shapes (shapefile / GeoJSON) ----------------
+let shpReader = null;
+function loadShpReader() {
+  shpReader ||= new Promise((resolve, reject) => {
+    const s = Object.assign(document.createElement('script'), { src: 'https://unpkg.com/shpjs@6.1.0/dist/shp.min.js', crossOrigin: '' });
+    s.onload = () => resolve(window.shp);
+    s.onerror = () => { shpReader = null; reject(new Error('Could not load the shapefile reader. Check your connection.')); };
+    document.head.append(s);
+  });
+  return shpReader;
+}
+
+async function readShapes(list) {
+  const files = [...list];
+  const pick = (...exts) => files.find((f) => exts.some((x) => f.name.toLowerCase().endsWith(x)));
+  const json = pick('.geojson', '.json');
+  if (json) {
+    const g = JSON.parse(await json.text());
+    const feats = g.type === 'FeatureCollection' ? g.features : g.type === 'Feature' ? [g] : [{ type: 'Feature', properties: {}, geometry: g }];
+    return { name: json.name, feats };
+  }
+  const zip = pick('.zip'), main = pick('.shp');
+  if (!zip && !main) throw new Error('Choose a zipped shapefile, the .shp with its .dbf and .prj, or a GeoJSON file.');
+  const shp = await loadShpReader();
+  let out;
+  if (zip) out = await shp(await zip.arrayBuffer());
+  else {
+    const parts = { shp: await main.arrayBuffer() };
+    const dbf = pick('.dbf'), prj = pick('.prj'), cpg = pick('.cpg');
+    if (dbf) parts.dbf = await dbf.arrayBuffer();
+    if (prj) parts.prj = await prj.text();
+    if (cpg) parts.cpg = await cpg.text();
+    out = await shp(parts);
+  }
+  return { name: (zip || main).name, feats: [].concat(out).flatMap((fc) => fc.features || []) };
+}
+
+// Points at which each feature is checked: vertices, points along lines, and a grid inside polygons.
+function samplePoints(geom) {
+  const pts = [];
+  const ring = (r, n) => { const k = Math.max(1, Math.ceil(r.length / n)); for (let i = 0; i < r.length; i += k) pts.push([r[i][1], r[i][0]]); };
+  const line = (l) => {
+    const total = l.reduce((a, p, i) => (i ? a + Math.hypot(p[0] - l[i - 1][0], p[1] - l[i - 1][1]) : 0), 0);
+    const step = total / 150 || 1;
+    for (let i = 1; i < l.length; i++) {
+      const [x0, y0] = l[i - 1], [x1, y1] = l[i];
+      const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / step));
+      for (let j = 0; j < n; j++) pts.push([y0 + (y1 - y0) * j / n, x0 + (x1 - x0) * j / n]);
+    }
+    if (l.length) pts.push([l[l.length - 1][1], l[l.length - 1][0]]);
+  };
+  const inRing = (x, y, r) => {
+    let inside = false;
+    for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+      if ((r[i][1] > y) !== (r[j][1] > y) && x < (r[j][0] - r[i][0]) * (y - r[i][1]) / (r[j][1] - r[i][1]) + r[i][0]) inside = !inside;
+    }
+    return inside;
+  };
+  const poly = (rings) => {
+    const outer = rings[0];
+    if (!outer?.length) return;
+    let w = Infinity, e = -Infinity, s = Infinity, n = -Infinity;
+    for (const [x, y] of outer) { w = Math.min(w, x); e = Math.max(e, x); s = Math.min(s, y); n = Math.max(n, y); }
+    const N = 18;
+    for (let a = 0; a < N; a++) {
+      for (let b = 0; b < N; b++) {
+        const x = w + (e - w) * (a + 0.5) / N, y = s + (n - s) * (b + 0.5) / N;
+        if (inRing(x, y, outer) && !rings.slice(1).some((h) => inRing(x, y, h))) pts.push([y, x]);
+      }
+    }
+    ring(outer, 60);
+  };
+  const walk = (g) => {
+    if (!g) return;
+    switch (g.type) {
+      case 'Point': pts.push([g.coordinates[1], g.coordinates[0]]); break;
+      case 'MultiPoint': g.coordinates.forEach((c) => pts.push([c[1], c[0]])); break;
+      case 'LineString': line(g.coordinates); break;
+      case 'MultiLineString': g.coordinates.forEach(line); break;
+      case 'Polygon': poly(g.coordinates); break;
+      case 'MultiPolygon': g.coordinates.forEach(poly); break;
+      case 'GeometryCollection': g.geometries.forEach(walk); break;
+    }
+  };
+  walk(geom);
+  return pts;
+}
+
+const NAME_KEYS = /^(name|nom|nombre|title|label|site|id|fid|objectid)$/i;
+function shapeName(f, i) {
+  const p = f.properties || {};
+  const k = Object.keys(p).find((key) => NAME_KEYS.test(key) && p[key] !== '' && p[key] != null);
+  return k ? String(p[k]) : `Feature ${i + 1}`;
+}
+
+async function loadShapes(files) {
+  const info = $('#shapesInfo');
+  info.hidden = false;
+  info.textContent = 'Reading…';
+  try {
+    const { name, feats: raw } = await readShapes(files);
+    const feats = raw.filter((f) => f?.geometry);
+    if (!feats.length) throw new Error('No features with geometry were found in that file.');
+    const b = L.geoJSON({ type: 'FeatureCollection', features: feats }).getBounds();
+    if (!b.isValid() || Math.abs(b.getWest()) > 180 || Math.abs(b.getEast()) > 180 || Math.abs(b.getNorth()) > 90 || Math.abs(b.getSouth()) > 90) {
+      throw new Error('These coordinates are not longitude/latitude. Include the .prj file, or reproject to WGS84.');
+    }
+    state.shapes = { name, items: feats.map((f, i) => ({ f, i, name: shapeName(f, i), pts: samplePoints(f.geometry), res: null })) };
+    buildShapesLayer();
+    info.textContent = `${name}: ${feats.length.toLocaleString()} feature${feats.length > 1 ? 's' : ''}`;
+    $('#expShapes').hidden = false;
+    map.fitBounds(b, { padding: [30, 30], maxZoom: 15 });
+    if (!state.analysis && !state.upload) {
+      // The shapes' extent (with a margin, and at least ~3 km across) becomes the analysis area.
+      const c = b.getCenter();
+      const minLat = 1.5 / 110.57, minLon = 1.5 / (111.32 * Math.cos(c.lat * Math.PI / 180));
+      const padLat = Math.max((b.getNorth() - b.getSouth()) * 0.15, minLat), padLon = Math.max((b.getEast() - b.getWest()) * 0.15, minLon);
+      setDemSource('global');
+      setAOI(L.latLngBounds([b.getSouth() - padLat, b.getWest() - padLon], [b.getNorth() + padLat, b.getEast() + padLon]));
+      toast('Analysis area set to your shapes. Tap “Analyze terrain” to check them.', false, 6000);
+    } else {
+      await checkShapes();
+    }
+  } catch (err) {
+    info.textContent = err.message;
+    toast(err.message, true, 8000);
+  }
+}
+$('#fileShapes').addEventListener('change', (e) => { if (e.target.files.length) loadShapes(e.target.files); e.target.value = ''; });
+// Drop files anywhere on the app.
+$('#app').addEventListener('dragover', (e) => {
+  if (![...e.dataTransfer.types].includes('Files')) return;
+  e.preventDefault();
+  $('#app').classList.add('dropping');
+});
+$('#app').addEventListener('dragleave', (e) => { if (!e.relatedTarget || !$('#app').contains(e.relatedTarget)) $('#app').classList.remove('dropping'); });
+$('#app').addEventListener('drop', (e) => {
+  e.preventDefault();
+  $('#app').classList.remove('dropping');
+  const files = e.dataTransfer.files;
+  if (!files.length) return;
+  if ([...files].some((f) => /\.tiff?$/i.test(f.name))) return toast('For a DEM, use Terrain settings → My GeoTIFF.', true);
+  loadShapes(files);
+});
+
+const isPoint = (it) => /Point$/.test(it.f.geometry.type);
+function shapeStyle(it) {
+  const r = it.res;
+  const color = !r ? ACCENT : r.outside ? '#8e8e93' : severity(r.depth).color;
+  if (isPoint(it)) return { radius: 6, color: '#fff', weight: 2, fillColor: color, fillOpacity: 1 };
+  return { color, weight: 2.5, opacity: 0.95, fillColor: color, fillOpacity: r && !r.outside && r.depth > 0 ? 0.3 : 0.12, dashArray: r?.outside ? '5 5' : null };
+}
+
+function buildShapesLayer() {
+  const sh = state.shapes;
+  state.layers.shapes?.remove();
+  const byFeature = new Map(sh.items.map((it) => [it.f, it]));
+  state.layers.shapes = L.geoJSON({ type: 'FeatureCollection', features: sh.items.map((it) => it.f) }, {
+    renderer: vecRenderer,
+    style: (f) => shapeStyle(byFeature.get(f)),
+    pointToLayer: (f, ll) => L.circleMarker(ll, { ...shapeStyle(byFeature.get(f)), renderer: vecRenderer }),
+    onEachFeature: (f, layer) => {
+      const it = byFeature.get(f);
+      it.layer = layer;
+      layer.options.bubblingMouseEvents = false;
+      layer.bindPopup(() => shapePopup(it), { maxWidth: 280 });
+    },
+  });
+  syncLayers();
+}
+
+function styleShapes() {
+  for (const it of state.shapes?.items || []) it.layer?.setStyle(shapeStyle(it));
+}
+
+function shapePopup(it) {
+  const r = it.res;
+  const props = Object.entries(it.f.properties || {}).filter(([, v]) => v !== '' && v != null && typeof v !== 'object').slice(0, 6);
+  const area = !isPoint(it);
+  let head;
+  if (!r) head = '<p class="hint">Analyze terrain to check this feature.</p>';
+  else if (r.outside) head = '<p class="hint">Outside the analysed area.</p>';
+  else {
+    const sev = severity(r.depth);
+    head = `<div class="hero"><strong>${depthText(r.depth)}</strong><span class="badge" style="background:${sev.color}">${sev.label}</span></div>`;
+  }
+  const rows = r && !r.outside ? [
+    [area ? 'Deepest point' : 'Depth', depthText(r.depth)],
+    ['Chance of flooding', `${Math.round(r.prob * 100)}%`],
+    ...(area ? [['Share under water', `${Math.round(r.share * 100)}%`]] : []),
+  ] : [];
+  rows.push(...props.map(([k, v]) => [esc(k), esc(v)]));
+  return `<div class="pop"><h4>${esc(it.name)}</h4>${head}
+    <table>${rows.map(([a, b]) => `<tr><td>${a}</td><td>${b}</td></tr>`).join('')}</table></div>`;
+}
+
+async function checkShapes() {
+  const sh = state.shapes;
+  if (!sh || !state.scenario) return;
+  const { values } = await call({ type: 'sample', points: sh.items.flatMap((it) => it.pts) });
+  let k = 0;
+  for (const it of sh.items) {
+    const vs = values.slice(k, k += it.pts.length).filter(Boolean);
+    it.res = !vs.length ? { outside: true, depth: 0, prob: 0, share: 0 } : {
+      outside: false,
+      depth: Math.max(...vs.map((v) => v.depth)),
+      prob: Math.max(...vs.map((v) => v.prob)),
+      share: vs.filter((v) => v.depth > 0).length / vs.length,
+    };
+  }
+  styleShapes();
+  renderShapeSummary();
+}
+
+function clearShapeResults() {
+  if (!state.shapes) return;
+  state.shapes.items.forEach((it) => { it.res = null; });
+  styleShapes();
+  $('#shapesBox').hidden = true;
+}
+
+function renderShapeSummary() {
+  const sh = state.shapes;
+  const inside = sh.items.filter((it) => !it.res.outside);
+  const wet = inside.filter((it) => it.res.depth > 0);
+  const dangerous = (it) => severity(it.res.depth).label === 'Dangerous';
+  $('#shapesBox').hidden = false;
+  $('#shapesTitle').textContent = sh.name;
+  stats($('#shapeStats'), [
+    ['Features checked', fmtInt(inside.length) + (inside.length < sh.items.length ? ` of ${fmtInt(sh.items.length)}` : '')],
+    ['Flooded', fmtInt(wet.length)],
+    ['Dangerous depth', fmtInt(wet.filter(dangerous).length)],
+    ['Highest chance', `${Math.round(Math.max(0, ...inside.map((it) => it.res.prob)) * 100)}%`],
+  ]);
+  const list = $('#shapeList');
+  list.innerHTML = '';
+  for (const it of [...wet].sort((a, b) => b.res.depth - a.res.depth).slice(0, 60)) {
+    const li = document.createElement('li');
+    li.className = dangerous(it) ? 'hot' : '';
+    li.innerHTML = `<span>${esc(it.name)}</span><span>${Math.round(it.res.prob * 100)}% · ${fmt(it.res.depth, 1)} m</span>`;
+    li.addEventListener('click', () => {
+      if (isPoint(it) && it.layer.getLatLng) map.setView(it.layer.getLatLng(), Math.max(map.getZoom(), 15));
+      else map.fitBounds(it.layer.getBounds(), { padding: [40, 40], maxZoom: 16 });
+      it.layer.openPopup();
+    });
+    list.append(li);
+  }
+}
+
 // ---------------- Layers, legend, exports ----------------
 $$('[data-layer]').forEach((c) => c.addEventListener('change', syncLayers));
 $$('input[name=floodView]').forEach((r) => r.addEventListener('change', syncLayers));
@@ -762,6 +1130,7 @@ function syncLayers() {
   if (far) hideTip();
   const want = {
     hill: on('hill'), hand: on('hand'), streams: on('streams'), exposure: on('exposure'),
+    shapes: $('[data-layer=shapes]').checked, // the user's own data stays visible at any zoom
     depth: on('flood') && view === 'depth', prob: on('flood') && view === 'prob',
   };
   for (const [k, layer] of Object.entries(state.layers)) {
@@ -823,6 +1192,23 @@ $('#expExposure').addEventListener('click', () => {
   const rows = [['osm_id', 'kind', 'name', 'lat', 'lon', 'depth_m', 'probability']];
   for (const f of ex.feats) rows.push([f.id, f.kind, `"${(f.name || '').replace(/"/g, '""')}"`, f.lat.toFixed(6), f.lon.toFixed(6), f.depth.toFixed(2), f.prob.toFixed(3)]);
   download('flood_depth_exposure.csv', rows.map((r) => r.join(',')).join('\n'), 'text/csv');
+});
+
+$('#expShapes').addEventListener('click', () => {
+  const sh = state.shapes;
+  if (!sh) return;
+  download('flood_depth_shapes.geojson', JSON.stringify({
+    type: 'FeatureCollection',
+    features: sh.items.map(({ f, res }) => ({
+      ...f,
+      properties: {
+        ...f.properties,
+        flood_depth_m: res && !res.outside ? +res.depth.toFixed(2) : null,
+        flood_prob: res && !res.outside ? +res.prob.toFixed(3) : null,
+        flooded_share: res && !res.outside ? +res.share.toFixed(3) : null,
+      },
+    })),
+  }), 'application/geo+json');
 });
 
 $('#btnMethod').addEventListener('click', () => $('#method').showModal());

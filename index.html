@@ -21,6 +21,9 @@
   <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v11m-4.5-4.5L12 15l4.5-4.5M5 19.5h14"/></symbol>
   <symbol id="i-chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
   <symbol id="i-close" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></symbol>
+  <symbol id="i-locate" viewBox="0 0 24 24"><path d="M20 4 3.5 10.6l7 2.9 2.9 7z"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15.5V4.5M7.5 9 12 4.5 16.5 9M5 19.5h14"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15zM10 20.5a2 2 0 0 0 4 0"/></symbol>
   <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></symbol>
 </svg>
 
@@ -52,6 +55,12 @@
             <button id="btnDraw"><svg><use href="#i-draw"/></svg><span>Draw on map</span></button>
             <button id="btnView"><svg><use href="#i-view"/></svg><span>Use this view</span></button>
           </div>
+          <label class="dropzone" id="shapesDrop">
+            <input type="file" id="fileShapes" multiple accept=".zip,.shp,.dbf,.prj,.cpg,.geojson,.json">
+            <svg><use href="#i-upload"/></svg>
+            <span><b>Upload shapefile or GeoJSON</b><small>Zipped .shp, or .shp + .dbf + .prj. You can also drop files on the map.</small></span>
+          </label>
+          <p class="hint" id="shapesInfo" hidden></p>
           <label class="field select-inline">
             <span class="sr">Example site</span>
             <select id="preset">
@@ -193,6 +202,11 @@
           <p class="hint">From OpenStreetMap. Tap a facility to locate it.</p>
           <dl class="stats" id="exposureStats" hidden></dl>
           <ul class="facilities" id="facilityList"></ul>
+          <div id="shapesBox" hidden>
+            <h3 class="sub" id="shapesTitle">Your shapes</h3>
+            <dl class="stats" id="shapeStats"></dl>
+            <ul class="facilities" id="shapeList"></ul>
+          </div>
         </div>
       </section>
 
@@ -211,6 +225,7 @@
             <span>Vector</span>
             <button class="chip" id="expReaches">Reaches (GeoJSON)</button>
             <button class="chip" id="expExposure">Exposure (CSV)</button>
+            <button class="chip" id="expShapes" hidden>Your shapes (GeoJSON)</button>
           </div>
         </div>
       </section>
@@ -224,6 +239,7 @@
 
   <div class="mapctl">
     <button class="fab" id="btnLayers" aria-label="Map layers" aria-expanded="false" aria-controls="layersPop"><svg><use href="#i-layers"/></svg></button>
+    <button class="fab" id="btnLocate" aria-label="Show my location and flood alerts" title="My location &amp; alerts" aria-pressed="false"><svg><use href="#i-locate"/></svg></button>
     <div class="popover" id="layersPop" hidden>
       <h3>Map</h3>
       <fieldset class="seg" id="basemap">
@@ -241,6 +257,7 @@
       </fieldset>
       <label class="toggle"><span>Streams</span><input type="checkbox" class="switch" data-layer="streams" checked></label>
       <label class="toggle"><span>Exposure</span><input type="checkbox" class="switch" data-layer="exposure" checked></label>
+      <label class="toggle"><span>Your shapes</span><input type="checkbox" class="switch" data-layer="shapes" checked></label>
       <label class="toggle"><span>Hillshade</span><input type="checkbox" class="switch" data-layer="hill"></label>
       <label class="toggle"><span>Height above drainage</span><input type="checkbox" class="switch" data-layer="hand"></label>
       <label class="field slider"><span>Opacity <output id="opacityOut">80%</output></span>
@@ -249,6 +266,7 @@
     </div>
   </div>
 
+  <div id="meAlert" class="me-alert" role="status" hidden></div>
   <div id="legend" class="legend" hidden></div>
   <div id="toast" class="toast" role="status" hidden></div>
 </div>
