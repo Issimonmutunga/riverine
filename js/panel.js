@@ -98,6 +98,14 @@ export function restorePanel() {
   if (beforePeek) setSnap(beforePeek);
   beforePeek = null;
 }
+/** Pixels of map hidden behind the sheet once it settles (0 on desktop). */
+export function sheetCover() {
+  return phone.matches ? snaps()[snap] : 0;
+}
+/** Using the map while the sheet is fully open drops it to half height. */
+export function makeRoomForMap() {
+  if (phone.matches && snap === 'full') setSnap('half');
+}
 
 function syncToggle() {
   const shut = phone.matches ? snap === 'peek' : panel.classList.contains('collapsed');
@@ -145,6 +153,41 @@ head.addEventListener('pointerdown', (e) => {
   head.addEventListener('pointerup', up);
   head.addEventListener('pointercancel', up);
 });
+// On phones the sheet's content drags the sheet too, like native sheets: pulling down from the top of the
+// list lowers it, and pushing up while it isn't fully open raises it before the list starts to scroll.
+const scroller = panel.querySelector('.scroll');
+let pull = null;
+scroller.addEventListener('touchstart', (e) => {
+  if (!phone.matches || e.touches.length !== 1 || e.target.closest('input[type=range], select, .facilities')) return;
+  pull = { y: e.touches[0].clientY, h: panel.offsetHeight, top: scroller.scrollTop <= 0, active: false, v: 0, last: e.touches[0].clientY, t: e.timeStamp };
+}, { passive: true });
+scroller.addEventListener('touchmove', (e) => {
+  if (!pull) return;
+  const y = e.touches[0].clientY, dy = y - pull.y;
+  if (!pull.active) {
+    if (Math.abs(dy) < 6) return;
+    const down = dy > 0 && pull.top, up = dy < 0 && snap !== 'full';
+    if (!down && !up) { pull = null; return; }
+    pull.active = true;
+    panel.classList.add('dragging');
+  }
+  e.preventDefault();
+  const dt = e.timeStamp - pull.t;
+  if (dt > 0) pull.v = (y - pull.last) / dt;
+  pull.last = y; pull.t = e.timeStamp;
+  const s = snaps();
+  panel.style.setProperty('--sheet-h', `${clamp(pull.h - dy, s.peek, s.full)}px`);
+}, { passive: false });
+const endPull = () => {
+  if (pull?.active) {
+    panel.classList.remove('dragging');
+    settle(panel.offsetHeight, pull.v);
+  }
+  pull = null;
+};
+scroller.addEventListener('touchend', endPull);
+scroller.addEventListener('touchcancel', endPull);
+
 // Double-click the header to put the card back in its corner.
 head.addEventListener('dblclick', (e) => {
   if (phone.matches || e.target.closest('button, a')) return;

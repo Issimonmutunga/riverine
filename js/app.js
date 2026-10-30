@@ -1,6 +1,6 @@
 // Flood Depth UI: map, area selection, worker orchestration, exposure and exports.
 import * as G from './geo.js';
-import { foldStep, peekPanel, restorePanel } from './panel.js';
+import { foldStep, peekPanel, restorePanel, sheetCover, makeRoomForMap } from './panel.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -191,7 +191,15 @@ function pickPlace(h, name) {
     ? L.latLngBounds([s, w], [n, ee])
     : L.latLngBounds([lat - 0.072, lon - 0.072 / Math.cos(lat * Math.PI / 180)], [lat + 0.072, lon + 0.072 / Math.cos(lat * Math.PI / 180)]);
   setAOI(b);
-  map.fitBounds(b, { padding: [40, 40] });
+  makeRoomForMap();
+  fitArea(b);
+}
+
+// Fit bounds into the part of the map not covered by the phone's bottom sheet.
+function fitArea(b, maxZoom = 18) {
+  makeRoomForMap();
+  const cover = Math.min(sheetCover(), map.getSize().y * 0.55);
+  map.fitBounds(b, { paddingTopLeft: [24, 24], paddingBottomRight: [24, 24 + cover], maxZoom });
 }
 
 // ---------------- Steps ----------------
@@ -205,7 +213,7 @@ $('#preset').addEventListener('change', (e) => {
   setDemSource('global');
   const [w, s, ee, n] = p.b;
   setAOI(L.latLngBounds([s, w], [n, ee]));
-  map.fitBounds(state.aoi, { padding: [20, 20] });
+  fitArea(state.aoi);
   $('#waterLevel').value = p.water ?? 0;
   $('#stage').value = p.stage;
   $('#stageOut').textContent = `${(+p.stage).toFixed(1)} m`;
@@ -256,7 +264,7 @@ $('#btnDraw').addEventListener('click', () => {
   peekPanel();
   map.dragging.disable();
   map.getContainer().classList.add('aoi-drawing');
-  toast('Click and drag on the map to draw the analysis area.', false, 3500);
+  toast(matchMedia('(pointer: coarse)').matches ? 'Drag a box on the map with your finger.' : 'Click and drag on the map to draw the analysis area.', false, 3500);
 });
 function stopDraw() {
   if (drawing?.rect) drawing.rect.remove();
@@ -268,22 +276,27 @@ function stopDraw() {
   btn.querySelector('span').textContent = 'Draw on map';
   restorePanel();
 }
-map.on('mousedown', (e) => {
-  if (!drawing) return;
-  drawing.start = e.latlng;
-  drawing.rect = L.rectangle(L.latLngBounds(e.latlng, e.latlng), { color: ACCENT, weight: 2, fillOpacity: 0.08, interactive: false }).addTo(map);
+// Pointer events, so a box can be drawn with a mouse, a pen or a finger.
+const mapEl = map.getContainer();
+mapEl.addEventListener('pointerdown', (e) => {
+  if (!drawing || !e.isPrimary || e.target.closest('.leaflet-control')) return;
+  e.preventDefault();
+  try { mapEl.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ }
+  drawing.start = map.mouseEventToLatLng(e);
+  drawing.rect = L.rectangle(L.latLngBounds(drawing.start, drawing.start), { color: ACCENT, weight: 2, fillOpacity: 0.08, interactive: false }).addTo(map);
 });
-map.on('mousemove', (e) => {
-  if (drawing?.start) drawing.rect.setBounds(L.latLngBounds(drawing.start, e.latlng));
+mapEl.addEventListener('pointermove', (e) => {
+  if (drawing?.start && e.isPrimary) drawing.rect.setBounds(L.latLngBounds(drawing.start, map.mouseEventToLatLng(e)));
 });
-map.on('mouseup', (e) => {
-  if (!drawing?.start) return;
-  const b = L.latLngBounds(drawing.start, e.latlng);
+mapEl.addEventListener('pointerup', (e) => {
+  if (!drawing?.start || !e.isPrimary) return;
+  const b = L.latLngBounds(drawing.start, map.mouseEventToLatLng(e));
   stopDraw();
   lastDraw = Date.now();
   if (map.latLngToContainerPoint(b.getNorthWest()).distanceTo(map.latLngToContainerPoint(b.getSouthEast())) < 12) return;
   setAOI(b);
 });
+mapEl.addEventListener('pointercancel', () => { if (drawing?.start) stopDraw(); });
 
 // ---------------- DEM source / upload ----------------
 function setDemSource(v) {
@@ -317,7 +330,7 @@ $('#fileDem').addEventListener('change', async (e) => {
     const corners = [[bbox[0], bbox[1]], [bbox[2], bbox[3]], [bbox[0], bbox[3]], [bbox[2], bbox[1]]].map(([x, y]) => T.inv(x, y));
     const b = L.latLngBounds(corners);
     setAOI(b);
-    map.fitBounds(b, { padding: [20, 20] });
+    fitArea(b);
     toast(`Loaded ${file.name} · ${width}×${height} px · ${T.name}`);
   } catch (err) {
     state.upload = null;
@@ -426,6 +439,16 @@ map.on('popupopen', () => {
   popupZoom = map.getZoom();
 });
 map.on('popupclose', () => { popupZoom = null; });
+map.on('dragstart', makeRoomForMap);
+map.on('popupopen', (e) => {
+  makeRoomForMap();
+  const cover = sheetCover();
+  if (!cover) return;
+  // Keep the popup's anchor above the sheet (and leave room for the popup itself above it).
+  const y = map.latLngToContainerPoint(e.popup.getLatLng()).y;
+  const limit = map.getSize().y - cover - 24;
+  if (y > limit) map.panBy([0, y - limit]);
+});
 map.on('zoomend', () => { if (popupZoom != null && map.getZoom() < popupZoom) map.closePopup(); });
 map.on('zoomend', () => syncLayers());
 
@@ -457,7 +480,7 @@ async function showTerrain(res) {
   await setOverlay('hill', res.hill, 210);
   await setOverlay('hand', res.handImg, 220);
   buildStreams(res);
-  map.fitBounds(gridBounds(g), { padding: [10, 10] });
+  fitArea(gridBounds(g));
 }
 
 function buildStreams(res) {
@@ -1002,7 +1025,8 @@ async function loadShapes(files) {
     buildShapesLayer();
     info.textContent = `${name}: ${feats.length.toLocaleString()} feature${feats.length > 1 ? 's' : ''}`;
     $('#expShapes').hidden = false;
-    map.fitBounds(b, { padding: [30, 30], maxZoom: 15 });
+    makeRoomForMap();
+    fitArea(b, 15);
     if (!state.analysis && !state.upload) {
       // The shapes' extent (with a margin, and at least ~3 km across) becomes the analysis area.
       const c = b.getCenter();
@@ -1133,7 +1157,7 @@ function renderShapeSummary() {
     li.innerHTML = `<span>${esc(it.name)}</span><span>${Math.round(it.res.prob * 100)}% · ${fmt(it.res.depth, 1)} m</span>`;
     li.addEventListener('click', () => {
       if (isPoint(it) && it.layer.getLatLng) map.setView(it.layer.getLatLng(), Math.max(map.getZoom(), 15));
-      else map.fitBounds(it.layer.getBounds(), { padding: [40, 40], maxZoom: 16 });
+      else fitArea(it.layer.getBounds(), 16);
       it.layer.openPopup();
     });
     list.append(li);
