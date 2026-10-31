@@ -31,7 +31,8 @@ const bases = {
   }),
 };
 bases['OpenStreetMap'].addTo(map);
-L.control.scale({ imperial: false, position: 'bottomleft' }).addTo(map);
+// Scale sits with the other map controls, away from the panel on the left.
+L.control.scale({ imperial: false, position: 'bottomright', maxWidth: 110 }).addTo(map);
 $$('input[name=basemap]').forEach((r) => r.addEventListener('change', () => {
   for (const [k, layer] of Object.entries(bases)) {
     if (k === r.value) layer.addTo(map); else layer.remove();

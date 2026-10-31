@@ -400,7 +400,14 @@ dialog .close { position: sticky; top: 14px; float: right; margin: 14px 14px 0 0
   -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
 }
 .leaflet-bar a:hover { background: var(--solid) !important; }
-.leaflet-control-scale-line { background: var(--surface); border-color: var(--muted); color: var(--ink); }
+.leaflet-control-scale { margin-bottom: 8px !important; }
+.leaflet-control-scale-line {
+  border: 1.5px solid var(--ink); border-top: 0; border-radius: 0 0 3px 3px;
+  padding: 1px 6px 0; margin-left: auto; line-height: 1.4;
+  background: var(--surface); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  color: var(--ink); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 10%);
+}
 .leaflet-control-attribution { background: var(--surface) !important; color: var(--muted); border-radius: 8px 0 0 0; font-size: 10.5px; }
 .leaflet-control-attribution a { color: var(--muted); }
 .leaflet-popup-content-wrapper { border-radius: var(--radius); box-shadow: var(--shadow); }
@@ -440,7 +447,7 @@ dialog .close { position: sticky; top: 14px; float: right; margin: 14px 14px 0 0
   .legend { bottom: auto; top: 12px; right: 68px; min-width: 0; max-width: calc(100% - 92px); }
   .toast { bottom: auto; top: 12px; }
   #panel { z-index: 1001; }
-  .leaflet-control-zoom, .leaflet-bottom.leaflet-left { display: none; }
+  .leaflet-control-zoom, .leaflet-control-scale, .leaflet-bottom.leaflet-left { display: none; }
   .leaflet-bottom.leaflet-right { top: 0; bottom: auto; left: 0; right: auto; }
   .leaflet-control-attribution { border-radius: 0 0 8px 0; }
   .mapctl { top: calc(24px + env(safe-area-inset-top)); }
@@ -578,14 +585,8 @@ h3.sub { margin: 18px 0 0; font-size: 13px; font-weight: 600; overflow: hidden; 
    Figure/ground: a grouped grey ground with solid cards on it, in the system (SF) sans. */
 .mapctl { --ground: #f2f2f7; --card: #ffffff; }
 @media (prefers-color-scheme: dark) { .mapctl { --ground: #1c1c1e; --card: #2c2c2e; } }
-.news-fab {
-  position: relative; width: auto; height: 40px; padding: 0 14px 0 11px; gap: 6px;
-  display: inline-flex; align-items: center; border-radius: 99px;
-  font-size: 14px; font-weight: 650; letter-spacing: -0.01em; color: var(--ink);
-}
-.news-fab svg { width: 18px; height: 18px; color: var(--accent); }
-.news-fab[aria-expanded=true] { background: var(--accent); color: var(--accent-ink); }
-.news-fab[aria-expanded=true] svg { color: var(--accent-ink); }
+.news-fab { position: relative; }
+.news-fab[aria-expanded=true] { color: var(--accent); }
 .news-fab .count {
   position: absolute; top: -5px; right: -5px; min-width: 19px; height: 19px; padding: 0 5px; border-radius: 99px;
   background: #ff3b30; color: #fff; font-size: 11px; font-weight: 700; line-height: 19px; text-align: center;
