@@ -1,6 +1,6 @@
 // Flood Depth UI: map, area selection, worker orchestration, exposure and exports.
 import * as G from './geo.js';
-import { foldStep, peekPanel, restorePanel, sheetCover, makeRoomForMap } from './panel.js';
+import { foldStep, peekPanel, restorePanel, makeRoomForMap } from './panel.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -52,6 +52,10 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { toggleLa
 L.DomEvent.disableClickPropagation($('.mapctl'));
 L.DomEvent.disableScrollPropagation(layersPop);
 
+map.attributionControl.getContainer().classList.add('compact');
+map.attributionControl.getContainer().addEventListener('click', (e) => {
+  if (!e.target.closest('a')) e.currentTarget.classList.toggle('open');
+});
 map.attributionControl.addAttribution('Elevation: <a href="https://registry.opendata.aws/terrain-tiles/">AWS Terrain Tiles</a>');
 
 // Rasters live in their own pane beneath vectors so streams and markers stay visible and clickable.
@@ -208,11 +212,8 @@ function pickPlace(h, name) {
   fitArea(b);
 }
 
-// Fit bounds into the part of the map not covered by the phone's bottom sheet.
 function fitArea(b, maxZoom = 18) {
-  makeRoomForMap();
-  const cover = Math.min(sheetCover(), map.getSize().y * 0.55);
-  map.fitBounds(b, { paddingTopLeft: [24, 24], paddingBottomRight: [24, 24 + cover], maxZoom });
+  map.fitBounds(b, { padding: [24, 24], maxZoom });
 }
 
 // ---------------- Steps ----------------
@@ -390,6 +391,7 @@ async function runAnalysis() {
     foldStep('#stepScenario', false);
     setProgress(`Done in ${fmt(res.stats.seconds)} s`, 100);
     setTimeout(() => ($('#progress').hidden = true), 1800);
+    makeRoomForMap();
     showConditionsAt(gridBounds(res.grid).getCenter());
     await runScenario();
     $('#stepScenario').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -458,16 +460,8 @@ map.on('popupopen', () => {
   popupZoom = map.getZoom();
 });
 map.on('popupclose', () => { popupZoom = null; });
-map.on('dragstart', makeRoomForMap);
-map.on('popupopen', (e) => {
-  makeRoomForMap();
-  const cover = sheetCover();
-  if (!cover) return;
-  // Keep the popup's anchor above the sheet (and leave room for the popup itself above it).
-  const y = map.latLngToContainerPoint(e.popup.getLatLng()).y;
-  const limit = map.getSize().y - cover - 24;
-  if (y > limit) map.panBy([0, y - limit]);
-});
+map.on('dragstart popupopen', makeRoomForMap);
+map.on('click', () => { if (!drawing && Date.now() - lastDraw > 400) makeRoomForMap(); });
 map.on('zoomend', () => { if (popupZoom != null && map.getZoom() < popupZoom) map.closePopup(); });
 map.on('zoomend', () => syncLayers());
 
