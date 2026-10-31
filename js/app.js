@@ -899,9 +899,26 @@ async function riverOutlook(cands) {
     if (q[i] > q[iPeak]) iPeak = i;
     if (Number.isFinite(qmax[i])) upper = Math.max(upper, qmax[i]);
   }
+  const high = pct(0.95);
+  // The 51-run GloFAS ensemble turns the forecast into chances: of a noticeable rise, and of high water.
+  let chance = null;
+  try {
+    const e = await getJSON(`https://flood-api.open-meteo.com/v1/flood?latitude=${best.r.latitude}&longitude=${best.r.longitude}&daily=river_discharge&ensemble=true&forecast_days=10`);
+    const runs = Object.entries(e.daily).filter(([k]) => k.startsWith('river_discharge')).map(([, v]) => v.filter(Number.isFinite));
+    const peaks = runs.filter((r) => r.length).map((r) => ({ peak: Math.max(...r), day: r.findIndex((v) => v >= high) }));
+    if (peaks.length >= 10) {
+      const firstHigh = peaks.map((p) => p.day).filter((d) => d >= 0).sort((a, b) => a - b);
+      chance = {
+        runs: peaks.length,
+        rise: peaks.filter((p) => p.peak >= q[iNow] * 1.1).length / peaks.length,
+        high: firstHigh.length / peaks.length,
+        highFrom: firstHigh.length ? e.daily.time[firstHigh[0]] : null,
+      };
+    }
+  } catch (err) { console.warn('River ensemble unavailable:', err); }
   return {
-    now: q[iNow], peak: q[iPeak], peakDay: t[iPeak], upper,
-    p20: pct(0.2), median: pct(0.5), p80: pct(0.8), high: pct(0.95), max: past[past.length - 1],
+    now: q[iNow], peak: q[iPeak], peakDay: t[iPeak], upper, chance,
+    p20: pct(0.2), median: pct(0.5), p80: pct(0.8), high, max: past[past.length - 1],
     series: q.slice(Math.max(0, iNow - 60)), today: Math.min(60, iNow),
   };
 }
@@ -962,6 +979,20 @@ function tile({ cls, icon, title, value, chart = '', status = '', tone = '' }) {
     ${status ? `<p class="status ${tone}">${status}</p>` : ''}</article>`;
 }
 
+// Ring gauge for the chance of a rise; the second figure is the chance of reaching high water.
+function chanceTile(c) {
+  const pct = Math.round(c.rise * 100), hi = Math.round(c.high * 100);
+  const tone = c.high >= 0.5 ? 'danger' : c.high >= 0.2 || c.rise >= 0.5 ? 'warn' : 'ok';
+  const C = 2 * Math.PI * 22;
+  return `<article class="tile chance ${tone}">
+    <svg class="ring" viewBox="0 0 56 56" aria-hidden="true"><circle cx="28" cy="28" r="22"/><circle class="val" cx="28" cy="28" r="22"
+      stroke-dasharray="${(C * c.rise).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 28 28)"/></svg>
+    <div><header><svg><use href="#i-wave"/></svg><span>Chance the river rises</span></header>
+      <div class="big">${pct}<small>% in 10 days</small></div>
+      <p class="status ${tone}">${hi}% chance of high water${c.highFrom ? `, from ${dayName(c.highFrom, true)}` : ''} · ${c.runs} forecast runs</p></div>
+  </article>`;
+}
+
 // Headlines are written from the data: only things worth a reader's attention make the paper.
 function headlines({ ll, place, rain, river, alerts }) {
   const out = [], where = place?.name || 'this area', at = `${ll.lat.toFixed(1)},${ll.lng.toFixed(1)}`;
@@ -995,6 +1026,14 @@ function headlines({ ll, place, rain, river, alerts }) {
       out.push({
         id: `river-${at}-${river.peakDay}`, tone: lv.tone, title: `River ${lv.label.toLowerCase()} by ${dayName(river.peakDay)}`,
         meta: `Peak ${fmtInt(river.peak)} m³/s against a usual ${fmtInt(river.median)} · GloFAS`,
+      });
+    }
+    const c = river.chance;
+    if (c && c.high >= 0.2) {
+      out.push({
+        id: `riverhigh-${at}-${c.highFrom}`, tone: c.high >= 0.5 ? 'danger' : 'warn',
+        title: `${Math.round(c.high * 100)}% chance the river reaches high water`,
+        meta: `${c.highFrom ? `From ${dayName(c.highFrom)} · ` : ''}${Math.round(c.high * c.runs)} of ${c.runs} GloFAS forecast runs`,
       });
     }
   }
@@ -1056,6 +1095,7 @@ function renderConditions() {
       value: `${fmtInt(river.now)}<small>m³/s</small>`, chart: sparkline(river),
       status: `${lv.label} · peak ${fmtInt(river.peak)} ${dayName(river.peakDay, true)}`, tone: lv.tone }));
   } else html.push(tile({ cls: 'river', icon: 'wave', title: 'River', value: '—', status: 'No mapped river flow here' }));
+  if (river?.chance) html.push(chanceTile(river.chance));
   tiles.innerHTML = html.join('');
 
   // With an analysis in place, the forecasts become one-tap scenarios.

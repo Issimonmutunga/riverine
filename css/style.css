@@ -585,10 +585,28 @@ h3.sub { margin: 18px 0 0; font-size: 13px; font-weight: 600; overflow: hidden; 
    Figure/ground: a grouped grey ground with solid cards on it, in the system (SF) sans. */
 .mapctl { --ground: #f2f2f7; --card: #ffffff; }
 @media (prefers-color-scheme: dark) { .mapctl { --ground: #1c1c1e; --card: #2c2c2e; } }
-.news-fab { position: relative; }
-.news-fab[aria-expanded=true] { color: var(--accent); }
+/* News button: a slanted two-band ribbon, red over blue, with a folded tail. */
+.news-fab {
+  position: relative; width: auto; height: auto; padding: 4px 2px 6px; border-radius: 8px;
+  background: none !important; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+.ribbon {
+  position: relative; display: flex; flex-direction: column; align-items: flex-start;
+  transform: rotate(-6deg); filter: drop-shadow(0 3px 5px rgb(0 0 0 / 28%));
+  transition: transform .2s var(--ease);
+}
+.news-fab:hover .ribbon { transform: rotate(-6deg) scale(1.05); }
+.news-fab[aria-expanded=true] .ribbon { transform: rotate(-3deg) scale(.96); }
+.ribbon b, .ribbon i {
+  display: block; color: #fff; font-style: italic; font-weight: 900; line-height: 1; letter-spacing: .01em;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", system-ui, sans-serif;
+}
+.ribbon b { position: relative; z-index: 1; padding: 5px 8px 4px; font-size: 12px; background: #d71f30; clip-path: polygon(0 8%, 100% 0, 100% 100%, 0 100%); }
+.ribbon i { padding: 4px 9px 5px 8px; margin: -1px 0 0 10px; font-size: 15px; background: #1672d4; clip-path: polygon(4% 0, 100% 0, 96% 100%, 0 100%); }
+/* folded tail under the red band */
+.ribbon::after { content: ""; position: absolute; left: 0; top: 19px; border: 6px solid transparent; border-top-color: #8e1420; border-left-color: #8e1420; }
 .news-fab .count {
-  position: absolute; top: -5px; right: -5px; min-width: 19px; height: 19px; padding: 0 5px; border-radius: 99px;
+  position: absolute; top: -4px; right: -6px; z-index: 2; min-width: 19px; height: 19px; padding: 0 5px; border-radius: 99px;
   background: #ff3b30; color: #fff; font-size: 11px; font-weight: 700; line-height: 19px; text-align: center;
   box-shadow: 0 0 0 2px var(--bg);
 }
@@ -648,7 +666,15 @@ h3.sub { margin: 18px 0 0; font-size: 13px; font-weight: 600; overflow: hidden; 
 
 @media (max-width: 820px) {
   /* Phones: drop down under the News button at near full width, over the other map buttons. */
-  .news-pop { top: 52px; right: 0; width: calc(100vw - 24px); transform-origin: calc(100% - 40px) -10px; z-index: 2; }
+  .news-pop { top: 64px; right: 0; width: calc(100vw - 24px); transform-origin: calc(100% - 40px) -10px; z-index: 2; }
   .news-pop::before { top: -6px; right: 36px; border-radius: 2px 0 0 0; }
   .news-inner { max-height: calc(100dvh - 250px); }
 }
+
+.tile.chance { grid-column: 1 / -1; flex-direction: row; align-items: center; gap: 12px; --c: #5856d6; }
+.tile.chance.warn { --c: #ff9500; }
+.tile.chance.danger { --c: #ff3b30; }
+.tile.chance > div { min-width: 0; }
+.ring { width: 56px; height: 56px; flex: none; }
+.ring circle { fill: none; stroke: var(--fill-hover); stroke-width: 7; }
+.ring .val { stroke: var(--c); stroke-linecap: round; }

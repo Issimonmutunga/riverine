@@ -9,7 +9,7 @@
   <meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
-  <link rel="stylesheet" href="css/style.css?v=20261031">
+  <link rel="stylesheet" href="css/style.css?v=20261031b">
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -243,7 +243,7 @@
   </aside>
 
   <div class="mapctl">
-    <button class="fab news-fab" id="btnNews" aria-label="Flood news and conditions" aria-expanded="false" aria-controls="newsPop" title="Flood news &amp; conditions"><svg><use href="#i-news"/></svg><b class="count" id="newsCount" hidden></b></button>
+    <button class="fab news-fab" id="btnNews" aria-label="Flood news and conditions" aria-expanded="false" aria-controls="newsPop" title="Flood news &amp; conditions"><span class="ribbon" aria-hidden="true"><b>FLOOD</b><i>NEWS</i></span><b class="count" id="newsCount" hidden></b></button>
     <div class="news-pop" id="newsPop" role="dialog" aria-label="Flood news and conditions" hidden>
       <div class="news-inner">
       <header class="masthead">
@@ -349,6 +349,6 @@
 </dialog>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-<script type="module" src="js/app.js?v=20261031"></script>
+<script type="module" src="js/app.js?v=20261031b"></script>
 </body>
 </html>
