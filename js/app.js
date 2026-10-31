@@ -803,6 +803,55 @@ async function sampleExposure() {
 // Rain from weather models and river discharge from Copernicus GloFAS, both via Open-Meteo (free, no key);
 // major flood events from GDACS. All are model or global feeds, so the pane also points to official warnings.
 const inKenya = (ll) => ll.lat > -4.72 && ll.lat < 5.03 && ll.lng > 33.9 && ll.lng < 41.91;
+
+// Official warning services by country (ISO code), then regional centres. Anywhere else gets the WMO's global page.
+const AGENCIES = {
+  ke: [['Kenya Met', 'https://meteo.go.ke']],
+  ug: [['Uganda Met', 'https://www.unma.go.ug']],
+  tz: [['Tanzania Met', 'https://www.meteo.go.tz']],
+  rw: [['Meteo Rwanda', 'https://www.meteorwanda.gov.rw']],
+  et: [['Ethiopia Met', 'https://www.ethiomet.gov.et']],
+  ng: [['NIHSA', 'https://nihsa.gov.ng']],
+  gh: [['Ghana Met', 'https://www.meteo.gov.gh']],
+  sn: [['ANACIM', 'https://www.anacim.sn']],
+  za: [['SA Weather Service', 'https://www.weathersa.co.za']],
+  mw: [['Malawi Met', 'https://www.metmalawi.gov.mw']],
+  in: [['IMD', 'https://mausam.imd.gov.in']],
+  bd: [['Flood Forecasting Centre', 'https://www.ffwc.gov.bd']],
+  pk: [['PMD', 'https://www.pmd.gov.pk'], ['NDMA', 'https://www.ndma.gov.pk']],
+  np: [['DHM Nepal', 'https://www.dhm.gov.np']],
+  cn: [['CMA', 'https://www.cma.gov.cn/en']],
+  jp: [['JMA', 'https://www.jma.go.jp/jma/indexe.html']],
+  ph: [['PAGASA', 'https://www.pagasa.dost.gov.ph']],
+  id: [['BMKG', 'https://www.bmkg.go.id']],
+  vn: [['NCHMF', 'https://nchmf.gov.vn']],
+  th: [['Thai Met', 'https://www.tmd.go.th']],
+  my: [['MetMalaysia', 'https://www.met.gov.my']],
+  gb: [['Met Office', 'https://www.metoffice.gov.uk'], ['Flood warnings', 'https://check-for-flooding.service.gov.uk']],
+  ie: [['Met Éireann', 'https://www.met.ie']],
+  de: [['DWD', 'https://www.dwd.de']],
+  fr: [['Vigicrues', 'https://www.vigicrues.gouv.fr'], ['Météo-France', 'https://meteofrance.com']],
+  it: [['Protezione Civile', 'https://www.protezionecivile.gov.it']],
+  es: [['AEMET', 'https://www.aemet.es']],
+  nl: [['KNMI', 'https://www.knmi.nl']],
+  us: [['National Weather Service', 'https://www.weather.gov'], ['River forecasts', 'https://water.noaa.gov']],
+  ca: [['Weather Canada', 'https://weather.gc.ca']],
+  br: [['INMET', 'https://portal.inmet.gov.br'], ['CEMADEN', 'https://www.gov.br/cemaden']],
+  ar: [['SMN', 'https://www.smn.gob.ar']],
+  co: [['IDEAM', 'https://www.ideam.gov.co']],
+  pe: [['SENAMHI', 'https://www.senamhi.gob.pe']],
+  au: [['Bureau of Meteorology', 'https://www.bom.gov.au']],
+  nz: [['MetService', 'https://www.metservice.com']],
+};
+const REGIONAL = [
+  [['ICPAC', 'https://www.icpac.net'], 'ke ug tz rw bi et so ss sd dj er'],
+  [['AGRHYMET', 'https://agrhymet.cilss.int'], 'sn ml bf ne td mr gm gw cv tg bj ci gn'],
+  [['Meteoalarm', 'https://www.meteoalarm.org'], 'at be bg hr cy cz dk ee fi fr de gr hu ie it lv lt lu mt nl no pl pt ro sk si es se ch is rs ba me mk md ua il'],
+];
+function agencies(cc) {
+  const own = [...(AGENCIES[cc] || []), ...REGIONAL.filter(([, list]) => list.split(' ').includes(cc)).map(([a]) => a)];
+  return own.length ? own : [['WMO severe weather', 'https://severeweather.wmo.int']];
+}
 const isoDay = (d) => d.toISOString().slice(0, 10);
 function dayName(iso, short = false) {
   const days = Math.round((Date.parse(`${iso}T12:00Z`) - Date.parse(`${isoDay(new Date())}T12:00Z`)) / 864e5);
@@ -861,7 +910,7 @@ async function loadConditions(ll) {
 async function placeName(ll) {
   const r = await getJSON(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=10&lat=${ll.lat.toFixed(4)}&lon=${ll.lng.toFixed(4)}`);
   const a = r.address || {};
-  return { name: a.city || a.town || a.village || a.county || a.state_district || a.state || r.name || '' };
+  return { name: a.city || a.town || a.village || a.county || a.state_district || a.state || r.name || '', cc: a.country_code || '' };
 }
 
 async function rainOutlook(c) {
@@ -1112,7 +1161,7 @@ function renderConditions() {
 
   const q = encodeURIComponent(`${place?.name || ''} flood`.trim());
   const official = [
-    ...(inKenya(ll) ? [['Kenya Met', 'https://meteo.go.ke'], ['ICPAC', 'https://www.icpac.net']] : []),
+    ...agencies(place?.cc || (inKenya(ll) ? 'ke' : '')),
     ['GDACS', 'https://www.gdacs.org'], ['GloFAS', 'https://global-flood.emergency.copernicus.eu'],
   ];
   $('#nowLinks').innerHTML = `<a class="news-link" href="https://news.google.com/search?q=${q}" target="_blank" rel="noopener">Flood news${place?.name ? ` for ${esc(place.name)}` : ''} ›</a>
