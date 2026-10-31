@@ -41,6 +41,7 @@ $$('input[name=basemap]').forEach((r) => r.addEventListener('change', () => {
 // Layers popover
 const layersBtn = $('#btnLayers'), layersPop = $('#layersPop');
 function toggleLayers(open = layersPop.hidden) {
+  if (open) toggleNews(false);
   layersPop.hidden = !open;
   layersBtn.setAttribute('aria-expanded', open);
 }
@@ -201,6 +202,7 @@ function pickPlace(h, name) {
     ? L.latLngBounds([s, w], [n, ee])
     : L.latLngBounds([lat - 0.072, lon - 0.072 / Math.cos(lat * Math.PI / 180)], [lat + 0.072, lon + 0.072 / Math.cos(lat * Math.PI / 180)]);
   setAOI(b);
+  showConditionsAt(b.getCenter(), name);
   makeRoomForMap();
   fitArea(b);
 }
@@ -234,6 +236,7 @@ function setAOI(bounds) {
   if (state.aoiRect) state.aoiRect.remove();
   state.aoiRect = L.rectangle(bounds, { color: ACCENT, weight: 2, dashArray: '6 6', fillColor: ACCENT, fillOpacity: 0.04, interactive: false }).addTo(map);
   describeAOI();
+  showConditionsAt(bounds.getCenter());
 }
 
 function describeAOI() {
@@ -386,7 +389,7 @@ async function runAnalysis() {
     foldStep('#stepScenario', false);
     setProgress(`Done in ${fmt(res.stats.seconds)} s`, 100);
     setTimeout(() => ($('#progress').hidden = true), 1800);
-    loadOutlook();
+    showConditionsAt(gridBounds(res.grid).getCenter());
     await runScenario();
     $('#stepScenario').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (err) {
@@ -414,8 +417,6 @@ async function fetchRivers(b) {
 }
 
 function clearResults() {
-  outlookFor = null;
-  $('#outlook').hidden = true;
   // Uploaded shapes are the user's own data, so they outlive a new analysis; only their flood results reset.
   for (const k of Object.keys(state.layers)) {
     if (k === 'shapes') continue;
@@ -794,15 +795,16 @@ async function sampleExposure() {
   }
 }
 
-// ---------------- Outlook: river and rain forecasts to ground the scenario ----------------
-// River discharge comes from Copernicus GloFAS and rain from weather models, both via Open-Meteo
-// (free, no key). They are model forecasts on a ~5 km grid, so the card points to official warnings too.
+// ---------------- Conditions: rain, river, flood alerts and news for the place in view ----------------
+// Rain from weather models and river discharge from Copernicus GloFAS, both via Open-Meteo (free, no key);
+// major flood events from GDACS. All are model or global feeds, so the pane also points to official warnings.
 const inKenya = (ll) => ll.lat > -4.72 && ll.lat < 5.03 && ll.lng > 33.9 && ll.lng < 41.91;
 const isoDay = (d) => d.toISOString().slice(0, 10);
 function dayName(iso, short = false) {
   const days = Math.round((Date.parse(`${iso}T12:00Z`) - Date.parse(`${isoDay(new Date())}T12:00Z`)) / 864e5);
   if (days === 0) return 'today';
   if (days === 1) return 'tomorrow';
+  if (days === -1) return 'yesterday';
   return new Date(`${iso}T12:00Z`).toLocaleDateString(undefined, short ? { weekday: 'short' } : { weekday: 'short', day: 'numeric', month: 'short' });
 }
 async function getJSON(url) {
@@ -811,43 +813,76 @@ async function getJSON(url) {
   return res.json();
 }
 
-let outlookFor = null;
-async function loadOutlook() {
-  const a = state.analysis;
-  if (!a?.reaches.length) return;
-  const key = JSON.stringify(a.grid.bounds);
-  if (outlookFor === key) return;
-  outlookFor = key;
-  const box = $('#outlook');
-  box.hidden = false;
-  box.dataset.level = '';
-  $('#olSummary').textContent = 'Checking river and rain forecasts…';
-  $('#olBody').innerHTML = '';
-  const g = a.grid.bounds;
-  const center = L.latLng((g.s + g.n) / 2, (g.w + g.e) / 2);
-  const [river, rain] = await Promise.allSettled([riverOutlook(a.reaches), rainOutlook(center)]);
-  if (outlookFor !== key) return;
-  if (river.status === 'rejected') console.warn('River outlook failed:', river.reason);
-  if (rain.status === 'rejected') console.warn('Rain outlook failed:', rain.reason);
-  renderOutlook(river.value, rain.value, center);
+const cond = { key: null, name: null, data: null };
+let condTimer;
+/** Show conditions for a point; `name` is used when the place came from search. */
+function showConditionsAt(ll, name = null) {
+  if (name) cond.name = name.split(',')[0];
+  clearTimeout(condTimer);
+  condTimer = setTimeout(() => loadConditions(ll), 300);
 }
 
-async function riverOutlook(reaches) {
-  // GloFAS snaps to its own 5 km river network, so try cells along the main reach and around its outlet
-  // and keep the one carrying the most water: that is the main river.
-  const main = reaches.reduce((x, r) => (r.areaKm2 > x.areaKm2 ? r : x));
-  const n = main.line.length, cands = [];
-  for (let k = 0; k < 8; k++) cands.push(main.line[Math.round(k * (n - 1) / 7)]);
-  const [olat, olon] = main.line[n - 1];
-  for (const dy of [-0.05, 0, 0.05]) for (const dx of [-0.05, 0, 0.05]) cands.push([olat + dy, olon + dx]);
+async function loadConditions(ll) {
+  const reaches = state.analysis?.reaches;
+  const key = `${ll.lat.toFixed(2)},${ll.lng.toFixed(2)}|${reaches ? JSON.stringify(state.analysis.grid.bounds) : ''}`;
+  if (cond.key === key) return;
+  cond.key = key;
+  const hint = $('#nowHint'), tiles = $('#nowTiles');
+  hint.hidden = true;
+  tiles.hidden = false;
+  tiles.classList.add('loading');
+  // River candidates: along the analysed main river if there is one, else a ~25 km grid around the point.
+  let cands;
+  if (reaches?.length) {
+    const main = reaches.reduce((x, r) => (r.areaKm2 > x.areaKm2 ? r : x));
+    const n = main.line.length;
+    cands = Array.from({ length: 8 }, (_, k) => main.line[Math.round(k * (n - 1) / 7)]);
+    const [olat, olon] = main.line[n - 1];
+    for (const dy of [-0.05, 0, 0.05]) for (const dx of [-0.05, 0, 0.05]) cands.push([olat + dy, olon + dx]);
+  } else {
+    cands = [];
+    for (const dy of [-0.1, -0.05, 0, 0.05, 0.1]) for (const dx of [-0.1, -0.05, 0, 0.05, 0.1]) cands.push([ll.lat + dy, ll.lng + dx]);
+  }
+  const [place, rain, river, alerts] = await Promise.allSettled([
+    cond.name ? Promise.resolve({ name: cond.name }) : placeName(ll),
+    rainOutlook(ll), riverOutlook(cands), floodAlerts(ll),
+  ]);
+  if (cond.key !== key) return;
+  const val = (r, what) => { if (r.status === 'rejected') console.warn(`${what} unavailable:`, r.reason); return r.value ?? null; };
+  cond.name = null;
+  cond.data = { ll, place: val(place, 'Place name'), rain: val(rain, 'Rain forecast'), river: val(river, 'River forecast'), alerts: val(alerts, 'Flood alerts') };
+  renderConditions();
+}
+
+async function placeName(ll) {
+  const r = await getJSON(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=10&lat=${ll.lat.toFixed(4)}&lon=${ll.lng.toFixed(4)}`);
+  const a = r.address || {};
+  return { name: a.city || a.town || a.village || a.county || a.state_district || a.state || r.name || '' };
+}
+
+async function rainOutlook(c) {
+  const r = await getJSON(`https://api.open-meteo.com/v1/forecast?latitude=${c.lat.toFixed(3)}&longitude=${c.lng.toFixed(3)}&daily=precipitation_sum&past_days=7&forecast_days=7&timezone=auto`);
+  const mm = r.daily.precipitation_sum.map((v) => v ?? 0), t = r.daily.time;
+  const today = 7;
+  let i = today;
+  for (let k = today; k < mm.length; k++) if (mm[k] > mm[i]) i = k;
+  return {
+    days: t, mm, today, max: mm[i], day: t[i],
+    ahead: mm.slice(today).reduce((s, v) => s + v, 0),
+    past: mm.slice(0, today).reduce((s, v) => s + v, 0),
+  };
+}
+
+async function riverOutlook(cands) {
+  // GloFAS snaps to its own 5 km river network, so try several cells and keep the one carrying the most
+  // water: that is the main river.
   const coords = (i) => cands.map((c) => c[i].toFixed(4)).join(',');
   const found = [].concat(await getJSON(`https://flood-api.open-meteo.com/v1/flood?latitude=${coords(0)}&longitude=${coords(1)}&daily=river_discharge_median&past_days=7&forecast_days=1`));
   const best = found.reduce((b, r) => {
     const m = Math.max(0, ...r.daily.river_discharge_median.filter(Number.isFinite));
     return m > b.m ? { m, r } : b;
   }, { m: 0, r: null });
-  if (!best.r) return null;
-
+  if (!best.r || best.m < 0.5) return null;
   const today = new Date(), start = new Date(today), end = new Date(today);
   start.setUTCFullYear(start.getUTCFullYear() - 3);
   end.setUTCDate(end.getUTCDate() + 9);
@@ -870,11 +905,21 @@ async function riverOutlook(reaches) {
   };
 }
 
-async function rainOutlook(c) {
-  const r = await getJSON(`https://api.open-meteo.com/v1/forecast?latitude=${c.lat.toFixed(3)}&longitude=${c.lng.toFixed(3)}&daily=precipitation_sum&forecast_days=7&timezone=auto`);
-  const mm = r.daily.precipitation_sum, t = r.daily.time;
-  const i = mm.reduce((b, v, k) => (v > mm[b] ? k : b), 0);
-  return { max: mm[i], day: t[i], total: mm.reduce((s, v) => s + (v || 0), 0) };
+// Major floods (GDACS) of the last 60 days within ~600 km; the event list is fetched once per visit.
+let gdacsEvents = null;
+async function floodAlerts(ll) {
+  if (!gdacsEvents) {
+    const to = new Date(), from = new Date(to);
+    from.setUTCDate(from.getUTCDate() - 60);
+    gdacsEvents = getJSON(`https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH?eventlist=FL&fromDate=${isoDay(from)}&toDate=${isoDay(to)}`)
+      .then((d) => d.features || [])
+      .catch((err) => { gdacsEvents = null; throw err; });
+  }
+  const rank = { Red: 3, Orange: 2, Green: 1 };
+  return (await gdacsEvents)
+    .map((f) => ({ ...f.properties, km: ll.distanceTo(L.latLng(f.geometry.coordinates[1], f.geometry.coordinates[0])) / 1000 }))
+    .filter((e) => e.km < 600)
+    .sort((a, b) => (rank[b.alertlevel] || 0) - (rank[a.alertlevel] || 0) || a.km - b.km);
 }
 
 // How the coming peak compares with this river's last three years.
@@ -892,53 +937,146 @@ function rainLevel(mm) {
 }
 
 function sparkline(r) {
-  const W = 280, H = 44, v = r.series, top = Math.max(r.high, ...v.filter(Number.isFinite)) * 1.08 || 1;
+  const W = 160, H = 34, v = r.series, top = Math.max(r.high, ...v.filter(Number.isFinite)) * 1.08 || 1;
   const x = (i) => (i / (v.length - 1)) * W, y = (q) => H - 2 - (q / top) * (H - 4);
   const path = (from, to) => v.slice(from, to + 1).map((q, k) => `${k ? 'L' : 'M'}${x(from + k).toFixed(1)},${y(q).toFixed(1)}`).join('');
-  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="River flow over the last two months and the next ten days">
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="River flow over the last two months and the next ten days; dashed red line marks high flow">
     <line class="hi" x1="0" x2="${W}" y1="${y(r.high)}" y2="${y(r.high)}"/>
     <line class="now" x1="${x(r.today)}" x2="${x(r.today)}" y1="0" y2="${H}"/>
     <path class="past" d="${path(0, r.today)}"/><path class="next" d="${path(r.today, v.length - 1)}"/></svg>`;
 }
-
-function renderOutlook(river, rain, center) {
-  const box = $('#outlook'), body = $('#olBody');
-  const parts = [], rows = [];
-  let tone = 'ok';
-  const worse = (t) => { if (t === 'danger' || (t === 'warn' && tone === 'ok')) tone = t; };
-  if (river) {
-    const lv = flowLevel(river.peak, river);
-    worse(lv.tone);
-    parts.push(`River ${lv.label.toLowerCase()}`);
-    const chip = (label, q) => `<button class="chip" data-flow="${Math.round(q)}">${label} <b>${fmtInt(q)}</b></button>`;
-    rows.push(`<div class="ol-row">
-      <div class="ol-top"><span>Main river</span><b>${fmtInt(river.now)} m³/s now</b><span class="lvl ${lv.tone}">${lv.label}</span></div>
-      ${sparkline(river)}
-      <p class="hint">Peak ${fmtInt(river.peak)} m³/s ${dayName(river.peakDay)}${river.upper > river.peak * 1.15 ? `, possibly up to ${fmtInt(river.upper)}` : ''}. Usual ${fmtInt(river.median)}, high ${fmtInt(river.high)} (dashed).</p>
-      <div class="ol-use"><span>Try as discharge</span>${chip('Forecast peak', river.peak)}${chip('High flow', river.high)}${chip('3-yr max', river.max)}</div>
-    </div>`);
-  }
-  if (rain) {
-    const lv = rainLevel(rain.max);
-    worse(lv.tone);
-    parts.push(rain.max >= 1 ? `${fmt(rain.max, 0)} mm rain ${dayName(rain.day, true)}` : 'little rain ahead');
-    rows.push(`<div class="ol-row">
-      <div class="ol-top"><span>Rain, next 7 days</span><b>${fmt(rain.max, 0)} mm</b><span class="lvl ${lv.tone}">${lv.label}</span></div>
-      <p class="hint">Wettest day: ${dayName(rain.day)} · ${fmt(rain.total, 0)} mm in total.</p>
-      ${rain.max >= 1 ? `<div class="ol-use"><span>Try as rainfall</span><button class="chip" data-rain="${Math.round(rain.max)}">Wettest day <b>${fmt(rain.max, 0)} mm</b></button></div>` : ''}
-    </div>`);
-  }
-  const links = [
-    ...(inKenya(center) ? [['Kenya Met Dept', 'https://meteo.go.ke'], ['ICPAC', 'https://www.icpac.net']] : []),
-    ['GDACS', 'https://www.gdacs.org'], ['GloFAS', 'https://global-flood.emergency.copernicus.eu'],
-  ].map(([name, url]) => `<a href="${url}" target="_blank" rel="noopener">${name}</a>`).join(' · ');
-  box.dataset.level = parts.length ? tone : '';
-  $('#olSummary').textContent = parts.length ? parts.join(' · ') : 'Forecasts are unavailable right now.';
-  body.innerHTML = `${rows.join('')}
-    <p class="ol-foot">Model forecasts (GloFAS and weather models via Open-Meteo), not official warnings. For warnings: ${links}.</p>`;
+function rainBars(r) {
+  const W = 160, H = 34, n = r.mm.length, bw = W / n, top = Math.max(25, ...r.mm);
+  return `<svg class="bars" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Daily rain for the past week and the week ahead">
+    ${r.mm.map((v, i) => {
+      const h = Math.max(v > 0 ? 1.5 : 0, (v / top) * (H - 2));
+      return `<rect class="${i < r.today ? 'past' : i === r.today ? 'today' : 'next'}${v >= 50 ? ' heavy' : ''}" x="${(i * bw + 1).toFixed(1)}" y="${(H - h).toFixed(1)}" width="${(bw - 2).toFixed(1)}" height="${h.toFixed(1)}" rx="1.5"/>`;
+    }).join('')}</svg>`;
 }
 
-$('#olBody').addEventListener('click', (e) => {
+function tile({ cls, icon, title, value, chart = '', status = '', tone = '' }) {
+  return `<article class="tile ${cls}">
+    <header><svg><use href="#i-${icon}"/></svg><span>${title}</span></header>
+    <div class="big">${value}</div>${chart}
+    ${status ? `<p class="status ${tone}">${status}</p>` : ''}</article>`;
+}
+
+// Headlines are written from the data: only things worth a reader's attention make the paper.
+function headlines({ ll, place, rain, river, alerts }) {
+  const out = [], where = place?.name || 'this area', at = `${ll.lat.toFixed(1)},${ll.lng.toFixed(1)}`;
+  for (const e of (alerts || []).slice(0, 3)) {
+    out.push({
+      id: `gdacs-${e.eventid}-${e.episodeid}`, tone: e.alertlevel === 'Red' ? 'danger' : e.alertlevel === 'Orange' ? 'warn' : 'ok',
+      title: `${e.alertlevel} flood alert: ${e.name}`, url: e.url.report,
+      meta: `${fmtInt(e.km)} km away · since ${dayName(e.fromdate.slice(0, 10))} · GDACS`,
+    });
+  }
+  if (rain) {
+    const wet = rain.mm.map((mm, k) => ({ mm, k })).filter(({ mm, k }) => k >= rain.today && mm >= 20)
+      .sort((a, b) => b.mm - a.mm).slice(0, 2);
+    for (const { mm, k } of wet) {
+      out.push({
+        id: `rain-${at}-${rain.days[k]}`, tone: mm >= 50 ? 'danger' : 'warn',
+        title: `${mm >= 50 ? 'Heavy' : 'Moderate'} rain ${dayName(rain.days[k])}`,
+        meta: `${fmt(mm, 0)} mm forecast in ${where} · weather models`,
+      });
+    }
+    if (rain.past >= 50) {
+      out.push({
+        id: `wet-${at}-${rain.days[rain.today]}`, tone: 'warn', title: 'Ground already wet',
+        meta: `${fmt(rain.past, 0)} mm fell in the past week, so new rain runs off faster`,
+      });
+    }
+  }
+  if (river) {
+    const lv = flowLevel(river.peak, river);
+    if (lv.tone !== 'ok') {
+      out.push({
+        id: `river-${at}-${river.peakDay}`, tone: lv.tone, title: `River ${lv.label.toLowerCase()} by ${dayName(river.peakDay)}`,
+        meta: `Peak ${fmtInt(river.peak)} m³/s against a usual ${fmtInt(river.median)} · GloFAS`,
+      });
+    }
+  }
+  return out;
+}
+
+// Read state lives in this browser only.
+const readStore = {
+  get() { try { return new Set(JSON.parse(localStorage.getItem('floodDepth.read')) || []); } catch { return new Set(); } },
+  set(ids) { try { localStorage.setItem('floodDepth.read', JSON.stringify([...ids].slice(-300))); } catch { /* storage unavailable */ } },
+};
+let newsItems = [];
+
+function renderHeadlines() {
+  const read = readStore.get();
+  const box = $('#newsHeadlines');
+  const unread = newsItems.filter((h) => !read.has(h.id)).length;
+  box.innerHTML = `<div class="hl-head"><h3>Headlines</h3>${unread ? '<button class="linkish" data-act="all-read">Mark all read</button>' : ''}</div>
+    ${newsItems.length ? newsItems.map((h) => `<article class="headline tone-${h.tone}${read.has(h.id) ? '' : ' unread'}" data-id="${esc(h.id)}">
+      <button class="dot" data-act="toggle" aria-label="${read.has(h.id) ? 'Mark as unread' : 'Mark as read'}" title="${read.has(h.id) ? 'Mark as unread' : 'Mark as read'}"></button>
+      <div><h4>${h.url ? `<a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.title)}</a>` : esc(h.title)}</h4><p>${esc(h.meta)}</p></div>
+    </article>`).join('') : '<p class="quiet">All quiet: no flood alerts, heavy rain or high rivers ahead.</p>'}`;
+  const badge = $('#newsCount');
+  badge.hidden = !unread;
+  badge.textContent = unread > 9 ? '9+' : unread;
+  $('#btnNews').setAttribute('aria-label', `Flood news and conditions${unread ? `, ${unread} unread` : ''}`);
+}
+
+$('#newsHeadlines').addEventListener('click', (e) => {
+  const act = e.target.closest('[data-act]')?.dataset.act;
+  const item = e.target.closest('.headline');
+  const read = readStore.get();
+  if (act === 'all-read') newsItems.forEach((h) => read.add(h.id));
+  else if (item && act === 'toggle') { const id = item.dataset.id; if (read.has(id)) read.delete(id); else read.add(id); }
+  else if (item) read.add(item.dataset.id); // opening or tapping a headline reads it
+  else return;
+  readStore.set(read);
+  renderHeadlines();
+});
+
+function renderConditions() {
+  const { ll, place, rain, river } = cond.data;
+  const tiles = $('#nowTiles');
+  tiles.classList.remove('loading');
+  $('#nowTitle').textContent = place?.name || 'This area';
+  newsItems = headlines(cond.data);
+  renderHeadlines();
+
+  const html = [];
+  if (rain) {
+    const lv = rainLevel(rain.max);
+    html.push(tile({ cls: 'rain', icon: 'rain', title: 'Rain',
+      value: `${fmt(rain.max, 0)}<small>mm ${dayName(rain.day, true)}</small>`, chart: rainBars(rain),
+      status: `${lv.label} · ${fmt(rain.ahead, 0)} mm this week`, tone: lv.tone }));
+  } else html.push(tile({ cls: 'rain', icon: 'rain', title: 'Rain', value: '—', status: 'Forecast unavailable' }));
+  if (river) {
+    const lv = flowLevel(river.peak, river);
+    html.push(tile({ cls: 'river', icon: 'wave', title: state.analysis ? 'Main river' : 'Nearest river',
+      value: `${fmtInt(river.now)}<small>m³/s</small>`, chart: sparkline(river),
+      status: `${lv.label} · peak ${fmtInt(river.peak)} ${dayName(river.peakDay, true)}`, tone: lv.tone }));
+  } else html.push(tile({ cls: 'river', icon: 'wave', title: 'River', value: '—', status: 'No mapped river flow here' }));
+  tiles.innerHTML = html.join('');
+
+  // With an analysis in place, the forecasts become one-tap scenarios.
+  const use = [];
+  if (state.analysis && river) {
+    use.push(`<button class="chip" data-flow="${Math.round(river.peak)}">River peak <b>${fmtInt(river.peak)}</b></button>`,
+      `<button class="chip" data-flow="${Math.round(river.high)}">High flow <b>${fmtInt(river.high)}</b></button>`);
+  }
+  if (state.analysis && rain?.max >= 1) use.push(`<button class="chip" data-rain="${Math.round(rain.max)}">Rain <b>${fmt(rain.max, 0)} mm</b></button>`);
+  $('#nowUse').innerHTML = use.length ? `<span>Try in scenario</span>${use.join('')}` : '';
+
+  const q = encodeURIComponent(`${place?.name || ''} flood`.trim());
+  const official = [
+    ...(inKenya(ll) ? [['Kenya Met', 'https://meteo.go.ke'], ['ICPAC', 'https://www.icpac.net']] : []),
+    ['GDACS', 'https://www.gdacs.org'], ['GloFAS', 'https://global-flood.emergency.copernicus.eu'],
+  ];
+  $('#nowLinks').innerHTML = `<a class="news-link" href="https://news.google.com/search?q=${q}" target="_blank" rel="noopener">Flood news${place?.name ? ` for ${esc(place.name)}` : ''} ›</a>
+    <span>Official: ${official.map(([n, u]) => `<a href="${u}" target="_blank" rel="noopener">${n}</a>`).join(' · ')}</span>`;
+  $('#nowFoot').hidden = false;
+}
+
+$('#nowUse').addEventListener('click', (e) => {
   const b = e.target.closest('button');
   if (!b) return;
   if (b.dataset.flow) {
@@ -948,7 +1086,29 @@ $('#olBody').addEventListener('click', (e) => {
     $('#p24').value = b.dataset.rain;
     $('#modeTabs [data-mode=rain]').click();
   }
+  toggleNews(false);
+  restorePanel();
+  $('#stepScenario').scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
+
+// The paper: closed by default, it opens beside its button on the map side, away from the main panel.
+const newsBtn = $('#btnNews'), newsPop = $('#newsPop');
+function toggleNews(open = newsPop.hidden) {
+  if (open === !newsPop.hidden) return;
+  newsPop.hidden = !open;
+  newsBtn.setAttribute('aria-expanded', open);
+  if (open) {
+    toggleLayers(false);
+    peekPanel();
+  } else {
+    restorePanel();
+  }
+}
+newsBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleNews(); });
+$('#newsClose').addEventListener('click', () => toggleNews(false));
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') toggleNews(false); });
+L.DomEvent.disableScrollPropagation(newsPop);
+$('#newsDate').textContent = new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
 // ---------------- My location & alerts ----------------
 const me = { watch: null, latlng: null, marker: null, circle: null, level: null, dismissed: null, notify: false, gen: 0 };
