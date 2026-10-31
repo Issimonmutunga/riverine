@@ -377,6 +377,33 @@ button.icon:hover { color: var(--ink); }
 @media (min-width: 821px) { .toast { left: calc(50% + 192px); } }
 @keyframes rise { from { opacity: 0; transform: translate(-50%, 8px); } }
 
+/* ---------- Coach: one tip at a time, on the map ---------- */
+.coach {
+  position: absolute; z-index: 850; top: 14px; left: 50%; transform: translateX(-50%);
+  width: max-content; max-width: min(400px, calc(100% - 32px));
+  padding: 10px 40px 10px 14px; border-radius: 16px; font-size: 13px; line-height: 1.4;
+  background: var(--surface); color: var(--ink);
+  -webkit-backdrop-filter: saturate(180%) blur(24px); backdrop-filter: saturate(180%) blur(24px);
+  box-shadow: var(--shadow); animation: drop .3s var(--ease);
+  transition: opacity .2s, transform .2s var(--ease);
+}
+.coach.out { opacity: 0; transform: translate(-50%, -6px); }
+.coach p { margin: 0; color: var(--muted); }
+.coach p b { display: block; color: var(--ink); font-size: 14px; font-weight: 650; letter-spacing: -0.01em; }
+.coach-dots { display: flex; gap: 4px; margin-bottom: 6px; }
+.coach-dots i { width: 14px; height: 4px; border-radius: 99px; background: var(--fill-hover); }
+.coach-dots i.did { background: color-mix(in srgb, var(--accent) 45%, transparent); }
+.coach-dots i.now { width: 22px; background: var(--accent); }
+.coach-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.coach-acts .chip:first-child { background: var(--accent); color: #fff; }
+.coach-acts .phone-only { display: none; }
+.coach-x { position: absolute; top: 8px; right: 8px; width: 26px; height: 26px; background: transparent; }
+.coach-x svg { width: 13px; height: 13px; }
+.coach-busy b::after { content: ""; display: inline-block; width: 10px; height: 10px; margin-left: 8px; border: 2px solid var(--accent); border-right-color: transparent; border-radius: 50%; vertical-align: -1px; animation: spin .8s linear infinite; }
+@keyframes drop { from { opacity: 0; transform: translate(-50%, -8px); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (min-width: 821px) { .coach { left: calc(50% + 192px); max-width: min(400px, calc(100% - 460px)); } }
+
 /* ---------- Dialog ---------- */
 dialog {
   width: min(720px, calc(100% - 32px)); max-height: calc(100% - 48px);
@@ -458,6 +485,13 @@ dialog .close { position: sticky; top: 14px; float: right; margin: 14px 14px 0 0
   /* The bottom of the screen is free again: legend bottom-left, compact attribution bottom-right. */
   .legend { top: auto; right: auto; left: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); min-width: 0; max-width: calc(100% - 72px); }
   .toast { bottom: auto; top: calc(68px + env(safe-area-inset-top)); }
+  /* Under the pill, clear of the map buttons on the right; toasts move to the bottom while it shows. */
+  .coach { top: calc(66px + env(safe-area-inset-top)); left: 12px; right: 72px; transform: none; width: auto; max-width: none; animation-name: drop-ph; }
+  .coach.out { transform: translateY(-6px); }
+  .coach-acts .phone-only { display: inline-flex; }
+  #panel:not(.drawer-closed) ~ .coach { display: none; }
+  .coach:not([hidden]) ~ .toast { top: auto; bottom: calc(12px + env(safe-area-inset-bottom)); }
+  @keyframes drop-ph { from { opacity: 0; transform: translateY(-8px); } }
   .leaflet-control-zoom, .leaflet-control-scale, .leaflet-bottom.leaflet-left { display: none; }
   .leaflet-bottom.leaflet-right { margin-bottom: env(safe-area-inset-bottom); }
   .leaflet-control-attribution.compact { margin: 0 10px 12px 0 !important; border-radius: 12px !important; cursor: pointer; box-shadow: var(--shadow-sm); }
@@ -599,7 +633,7 @@ h3.sub { margin: 18px 0 0; font-size: 13px; font-weight: 600; overflow: hidden; 
    Figure/ground: a grouped grey ground with solid cards on it, in the system (SF) sans. */
 .mapctl { --ground: #f2f2f7; --card: #ffffff; }
 @media (prefers-color-scheme: dark) { .mapctl { --ground: #1c1c1e; --card: #2c2c2e; } }
-/* News button: a slanted two-band ribbon, red over blue, with a folded tail. */
+/* News button: a slanted two-band ribbon, graphite over red, with a folded tail. */
 .news-fab {
   position: relative; width: auto; height: auto; padding: 4px 2px 6px; border-radius: 8px;
   background: none !important; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
@@ -615,13 +649,14 @@ h3.sub { margin: 18px 0 0; font-size: 13px; font-weight: 600; overflow: hidden; 
   display: block; color: #fff; font-style: italic; font-weight: 900; line-height: 1; letter-spacing: .01em;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", system-ui, sans-serif;
 }
-.ribbon b { position: relative; z-index: 1; padding: 4px 6px 3px; font-size: 9.5px; background: #d71f30; clip-path: polygon(0 8%, 100% 0, 100% 100%, 0 100%); }
-.ribbon i { padding: 3px 7px 4px 6px; margin: -1px 0 0 8px; font-size: 12.5px; background: #1672d4; clip-path: polygon(4% 0, 100% 0, 96% 100%, 0 100%); }
+.ribbon b { position: relative; z-index: 1; padding: 4px 6px 3px; font-size: 9.5px; letter-spacing: .08em; color: #e5e5ea; background: #2c2c2e; clip-path: polygon(0 8%, 100% 0, 100% 100%, 0 100%); }
+.ribbon i { padding: 3px 7px 4px 6px; margin: -1px 0 0 8px; font-size: 12.5px; background: #d71f30; clip-path: polygon(4% 0, 100% 0, 96% 100%, 0 100%); }
+@media (prefers-color-scheme: dark) { .ribbon b { background: #48484a; } }
 /* folded tail under the red band */
-.ribbon::after { content: ""; position: absolute; left: 0; top: 15px; border: 5px solid transparent; border-top-color: #8e1420; border-left-color: #8e1420; }
+.ribbon::after { content: ""; position: absolute; left: 0; top: 15px; border: 5px solid transparent; border-top-color: #0b0b0c; border-left-color: #0b0b0c; }
 .news-fab .count {
   position: absolute; top: -4px; right: -6px; z-index: 2; min-width: 19px; height: 19px; padding: 0 5px; border-radius: 99px;
-  background: #ff3b30; color: #fff; font-size: 11px; font-weight: 700; line-height: 19px; text-align: center;
+  background: #1d1d1f; color: #fff; font-size: 11px; font-weight: 700; line-height: 19px; text-align: center;
   box-shadow: 0 0 0 2px var(--bg);
 }
 .news-pop {

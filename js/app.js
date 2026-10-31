@@ -1,6 +1,7 @@
 // Flood Depth UI: map, area selection, worker orchestration, exposure and exports.
 import * as G from './geo.js';
 import { foldStep, peekPanel, restorePanel, makeRoomForMap } from './panel.js';
+import { coach, coachBusy, restartCoach } from './coach.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -239,6 +240,7 @@ function setAOI(bounds) {
   state.aoiRect = L.rectangle(bounds, { color: ACCENT, weight: 2, dashArray: '6 6', fillColor: ACCENT, fillOpacity: 0.04, interactive: false }).addTo(map);
   describeAOI();
   showConditionsAt(bounds.getCenter());
+  coach('run');
 }
 
 function describeAOI() {
@@ -362,6 +364,7 @@ async function runAnalysis() {
   btn.disabled = true;
   btn.textContent = 'Analyzing…';
   setProgress('Starting', 2);
+  coachBusy('Analyzing terrain…');
   clearResults();
   const b = state.aoi;
   const msg = {
@@ -392,12 +395,14 @@ async function runAnalysis() {
     setProgress(`Done in ${fmt(res.stats.seconds)} s`, 100);
     setTimeout(() => ($('#progress').hidden = true), 1800);
     makeRoomForMap();
+    coach('scenario');
     showConditionsAt(gridBounds(res.grid).getCenter());
     await runScenario();
     $('#stepScenario').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (err) {
     setProgress(err.message, 0);
     $('#progress').classList.add('failed');
+    coachBusy(null);
     // Show the reason where the user acted, and drop any side notice that no longer matters.
     if ($('#toast').classList.contains('notice')) $('#toast').hidden = true;
     foldStep('#stepArea', false);
@@ -458,6 +463,7 @@ let popupZoom = null;
 map.on('popupopen', () => {
   if (zoomedFarOut()) return map.closePopup();
   popupZoom = map.getZoom();
+  if (state.scenario) coach('exposure');
 });
 map.on('popupclose', () => { popupZoom = null; });
 map.on('dragstart popupopen', makeRoomForMap);
@@ -615,6 +621,8 @@ const runScenarioSoon = debounce(runScenario, 120);
 $('#stage').addEventListener('input', (e) => { $('#stageOut').textContent = `${(+e.target.value).toFixed(1)} m`; runScenarioSoon(); });
 $('#sigma').addEventListener('input', (e) => { $('#sigmaOut').textContent = `${(+e.target.value).toFixed(1)} m`; runScenarioSoon(); });
 ['#p24', '#cf', '#runoffC', '#qref', '#qexp', '#manning'].forEach((s) => $(s).addEventListener('change', runScenario));
+// Trying a scenario of their own moves the guide on to reading the map.
+['#stage', '#p24', '#qref', '#modeTabs'].forEach((s) => $(s).addEventListener(s === '#modeTabs' ? 'click' : 'input', () => { if (state.analysis) coach('explore'); }));
 
 function reachPopup(r) {
   const n = state.scenario?.params.n ?? +$('#manning').value;
@@ -714,6 +722,7 @@ const FACILITY = /^(hospital|clinic|doctors|health_post|pharmacy|school|college|
 $('#btnExposure').addEventListener('click', async () => {
   const g = state.analysis.grid.bounds;
   const btn = $('#btnExposure');
+  coach('done');
   btn.disabled = true; btn.textContent = 'Querying OpenStreetMap…';
   const bb = `${g.s},${g.w},${g.n},${g.e}`;
   const am = 'hospital|clinic|doctors|health_post|pharmacy|school|college|university|kindergarten|police|fire_station|shelter|townhall|community_centre|marketplace|water_point|drinking_water';
@@ -1633,6 +1642,11 @@ $('#expShapes').addEventListener('click', () => {
 });
 
 $('#btnMethod').addEventListener('click', () => $('#method').showModal());
+$('#btnTips').addEventListener('click', () => {
+  $('#method').close();
+  restartCoach(state.exposure ? 'done' : state.scenario ? 'scenario' : state.aoi ? 'run' : 'area');
+});
+coach(state.aoi ? 'run' : 'area');
 
 // Console access for power users: floodDepth.state.analysis, floodDepth.map, …
 window.floodDepth = { map, state };
