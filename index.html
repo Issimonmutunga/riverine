@@ -9,9 +9,6 @@
   <meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Old+Standard+TT:ital,wght@0,400;0,700;1,400&family=UnifrakturMaguntia&display=swap">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -246,12 +243,12 @@
   </aside>
 
   <div class="mapctl">
-    <button class="fab news-fab" id="btnNews" aria-label="Flood news and conditions" aria-expanded="false" aria-controls="newsPop" title="Flood news &amp; conditions">News<b class="count" id="newsCount" hidden></b></button>
+    <button class="fab news-fab" id="btnNews" aria-label="Flood news and conditions" aria-expanded="false" aria-controls="newsPop" title="Flood news &amp; conditions"><svg><use href="#i-news"/></svg><span>News</span><b class="count" id="newsCount" hidden></b></button>
     <div class="news-pop" id="newsPop" role="dialog" aria-label="Flood news and conditions" hidden>
       <div class="news-inner">
       <header class="masthead">
         <button class="icon" id="newsClose" aria-label="Close"><svg><use href="#i-close"/></svg></button>
-        <h2>The Flood Gazette</h2>
+        <h2>Flood News</h2>
         <p class="dateline"><span id="nowTitle">Your area</span><span id="newsDate"></span></p>
       </header>
       <p class="hint" id="nowHint">Search a place, pick an example or tap the location button, and the latest rain, river levels and flood alerts there will appear here.</p>
