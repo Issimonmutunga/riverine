@@ -383,7 +383,8 @@ button.icon:hover { color: var(--ink); }
 .toast.error > svg { color: var(--danger); }
 .toast button.icon { width: 26px; height: 26px; background: transparent; flex: none; }
 .toast button.icon svg { width: 14px; height: 14px; }
-@media (min-width: 821px) { .toast { left: calc(50% + 192px); } }
+/* Desktop: centred in the map space between the panel (left) and the toolbar (right). */
+@media (min-width: 821px) { .toast { left: calc(50% + 40px); } }
 @keyframes rise { from { opacity: 0; transform: translate(-50%, 8px); } }
 
 /* ---------- Coach: one tip at a time, on the map ---------- */
@@ -411,7 +412,7 @@ button.icon:hover { color: var(--ink); }
 .coach-busy b::after { content: ""; display: inline-block; width: 10px; height: 10px; margin-left: 8px; border: 2px solid var(--accent); border-right-color: transparent; border-radius: 50%; vertical-align: -1px; animation: spin .8s linear infinite; }
 @keyframes drop { from { opacity: 0; transform: translate(-50%, -8px); } }
 @keyframes spin { to { transform: rotate(360deg); } }
-@media (min-width: 821px) { .coach { left: calc(50% + 192px); max-width: min(400px, calc(100% - 460px)); } }
+@media (min-width: 821px) { .coach { left: calc(50% + 40px); max-width: min(380px, calc(100% - 800px)); } }
 
 /* ---------- Dialog ---------- */
 dialog {
@@ -1223,3 +1224,58 @@ svg.inline { width: 14px; height: 14px; vertical-align: -2px; }
   #app:has(.news-pop:not([hidden]), .tips-pop:not([hidden])) .coach { opacity: 0; pointer-events: none; }
   @keyframes drop-ph { from { opacity: 0; transform: translateY(-8px); } }
 }
+
+/* ---------- Desktop: the same word cards as phones, as a toolbar at the top right ----------
+   news · tips · SOS · more sit in one row (like the chips along the top of Google Maps); only map
+   controls stay in the column below it; every pane and the tools tray drop down from under the row,
+   so nothing reaches the zoom buttons and scale bar at the bottom. */
+@media (min-width: 821px) {
+  .tabbar { display: flex; position: absolute; z-index: 810; top: 12px; right: 12px; gap: 8px; }
+  .tab[data-tab=map] { display: none; }
+  .tab {
+    position: relative; height: 44px; min-width: 66px; padding: 0 16px; border-radius: 14px;
+    display: grid; place-items: center;
+    background: var(--surface); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
+    box-shadow: var(--glass-edge), var(--shadow); color: var(--ink);
+  }
+  .tab:hover:not(:disabled) { background: var(--surface-hover); }
+  .tab .word { font-size: 15.5px; font-weight: 800; letter-spacing: -0.02em; line-height: 1; }
+  .tab[aria-current=page], .tab[aria-current=page]:hover:not(:disabled) { background: var(--ink); color: var(--bg); }
+  .tab[data-tab=tips]:not([aria-current=page]) { color: #248a3d; }
+  .tab.ready:not([aria-current=page]) { color: #c76a00; box-shadow: var(--glass-edge), inset 0 0 0 1.5px #ff9500, var(--shadow); }
+  .tab-sos { color: #d70015; box-shadow: var(--glass-edge), inset 0 0 0 1.5px rgb(224 48 30 / 60%), var(--shadow); }
+  .tab-sos .word { letter-spacing: .04em; }
+  .tab-sos[aria-current=page], .tab-sos[aria-current=page]:hover:not(:disabled) { background: #e0301e; color: #fff; }
+  .tab.danger, .tab.danger:hover:not(:disabled) { background: #e0301e; color: #fff !important; }
+  .tab.danger::after { content: ""; position: absolute; inset: 0; border-radius: 14px; box-shadow: 0 0 0 0 rgb(224 48 30 / 55%); animation: ring 1.8s ease-out infinite; }
+  .tab-n {
+    position: absolute; top: -6px; right: -6px; min-width: 19px; height: 19px; padding: 0 5px; border-radius: 99px;
+    background: #e0301e; color: #fff; font-size: 11px; font-weight: 700; line-height: 19px; text-align: center; box-shadow: 0 0 0 2px var(--bg);
+  }
+  .tab-dot { position: absolute; top: 6px; right: 7px; width: 8px; height: 8px; border-radius: 50%; background: #ff9500; }
+  .tab-dot.danger { background: #e0301e; }
+  @media (prefers-color-scheme: dark) {
+    .tab[data-tab=tips]:not([aria-current=page]) { color: #30d158; }
+    .tab-sos:not([aria-current=page]) { color: #ff6961; }
+  }
+
+  /* The column under the toolbar keeps only Layers and My location. */
+  .mapctl { top: 68px; }
+  #btnNews, #btnAdapt, #btnMore { display: none; }
+  /* Panes and the tray open beside that column, top-aligned with it, below the toolbar. */
+  .tips-wrap, .more-anchor { position: static; }
+  .news-pop::before, .tips-pop::before { display: none; }
+  .news-pop, .tips-pop, .side-pop { width: min(360px, calc(100vw - 480px)); }
+  .news-inner, .tips-inner, .side-inner { max-height: calc(100dvh - 68px - 76px); }
+  .tool-tray { transform-origin: calc(100% - 40px) -10px; }
+  /* With the coach and the toolbar both along the top, the coach waits while a pane is open. */
+  #app:has(.news-pop:not([hidden]), .tips-pop:not([hidden])) .coach { opacity: 0; pointer-events: none; }
+}
+
+/* Step 1: the main action first, then the extras grouped underneath. */
+.options { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--line); }
+.options-head { margin: 0 0 8px; font-size: 11.5px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.options .dropzone { margin-bottom: 4px; }
+.options .more { margin-top: 2px; }
+/* The tips and more buttons now live in the tab bar / toolbar; their wrappers take no room in the column. */
+.tips-wrap, .more-wrap, .more-anchor { display: contents; }

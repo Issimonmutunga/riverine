@@ -11,7 +11,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
-  <link rel="stylesheet" href="css/style.css?v=20261106f">
+  <link rel="stylesheet" href="css/style.css?v=20261106g">
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -105,12 +105,6 @@
             <button id="btnDraw"><svg><use href="#i-draw"/></svg><span>Draw on map</span></button>
             <button id="btnView"><svg><use href="#i-view"/></svg><span>Use this view</span></button>
           </div>
-          <label class="dropzone" id="shapesDrop">
-            <input type="file" id="fileShapes" multiple accept=".zip,.shp,.dbf,.prj,.cpg,.geojson,.json">
-            <svg><use href="#i-upload"/></svg>
-            <span><b>Upload shapefile or GeoJSON</b><small>Zipped .shp, or .shp + .dbf + .prj. You can also drop files on the map.</small></span>
-          </label>
-          <p class="hint" id="shapesInfo" hidden></p>
           <label class="field select-inline">
             <span class="sr">Example site</span>
             <select id="preset">
@@ -119,6 +113,21 @@
           </label>
           <p class="hint" id="aoiInfo">Search for a place, draw a box, or pick an example.</p>
 
+          <button class="primary" id="btnRun" disabled>Analyze terrain</button>
+          <div class="progress" id="progress" hidden><div class="bar"></div><span class="msg"></span></div>
+          <details class="more" id="terrainMore" hidden>
+            <summary>Terrain summary</summary>
+            <dl class="stats" id="terrainStats" hidden></dl>
+          </details>
+
+          <div class="options">
+            <h4 class="options-head">More options</h4>
+          <label class="dropzone" id="shapesDrop">
+            <input type="file" id="fileShapes" multiple accept=".zip,.shp,.dbf,.prj,.cpg,.geojson,.json">
+            <svg><use href="#i-upload"/></svg>
+            <span><b>Upload shapefile or GeoJSON</b><small>Zipped .shp, or .shp + .dbf + .prj. You can also drop files on the map.</small></span>
+          </label>
+          <p class="hint" id="shapesInfo" hidden></p>
           <details class="more">
             <summary>Terrain settings</summary>
             <div class="more-body">
@@ -193,13 +202,7 @@
               </div>
             </div>
           </details>
-
-          <button class="primary" id="btnRun" disabled>Analyze terrain</button>
-          <div class="progress" id="progress" hidden><div class="bar"></div><span class="msg"></span></div>
-          <details class="more" id="terrainMore" hidden>
-            <summary>Terrain summary</summary>
-            <dl class="stats" id="terrainStats" hidden></dl>
-          </details>
+          </div>
         </div>
       </section>
 
@@ -540,6 +543,6 @@
 </dialog>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-<script type="module" src="js/app.js?v=20261106f"></script>
+<script type="module" src="js/app.js?v=20261106g"></script>
 </body>
 </html>
