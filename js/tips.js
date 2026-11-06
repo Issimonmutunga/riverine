@@ -343,7 +343,8 @@ export function renderTips(ctx) {
         <span class="tip-kicker">${X.dangerKick(deep)}</span>
         <h3>${X.dangerHead(deep)}</h3>
         <p>${ctx.depth > 0 ? X.depthHere(ctx.depth.toFixed(1)) : X.edge}${Number.isFinite(ctx.prob) ? X.chance(Math.round(ctx.prob * 100)) : ''}${X.inScenario}</p>
-        ${ctx.calls ? `<div class="tip-calls">${ctx.calls}</div>` : ''}
+        ${ctx.calls || ctx.share ? `<div class="tip-calls">${ctx.calls || ''}
+          ${ctx.share ? `<button class="share-quick" data-act="share"><svg><use href="#i-shout"/></svg>${esc(ctx.share)}</button>` : ''}</div>` : ''}
       </div>
       ${route}
       ${section(X.getOut, list(X.GET_OUT, 'steps'))}

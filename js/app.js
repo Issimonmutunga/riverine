@@ -1336,8 +1336,10 @@ async function checkMe() {
   me.level = level;
   if (changed) me.dismissed = null;
   const canNotify = 'Notification' in window && Notification.permission !== 'denied' && !me.notify && level !== 'none';
+  // In the flood: call buttons, plus one tap to tell saved contacts (or open Share).
   const calls = level === 'danger' || level === 'wet'
     ? hotlines(me.latlng).map(([name, num]) => `<a class="hotline" href="tel:${num}"><svg><use href="#i-phone"/></svg>${name} <b>${num}</b></a>`).join('')
+      + (features.share ? `<button class="share-quick" data-act="share"><svg><use href="#i-shout"/></svg>${esc(features.share.quickLabel())}</button>` : '')
     : '';
   meAlert.className = `me-alert ${level}`;
   meAlert.innerHTML = `
@@ -1362,6 +1364,7 @@ alertBtn.addEventListener('click', () => { me.dismissed = null; showAlert(true);
 meAlert.addEventListener('click', async (e) => {
   const act = e.target.closest('button')?.dataset.act;
   if (act === 'close') { me.dismissed = me.level; showAlert(false); }
+  if (act === 'share') features.share?.quick();
   if (act === 'notify') {
     me.notify = (await Notification.requestPermission()) === 'granted';
     toast(me.notify ? 'You’ll get a notification if your location turns dangerous while this tab is in the background.' : 'Notifications are off for this site.', me.notify ? 'info' : 'notice');
@@ -1478,7 +1481,7 @@ async function refreshTips() {
     ? hotlines(ll).map(([name, num]) => `<a class="hotline" href="tel:${num}"><svg><use href="#i-phone"/></svg>${name} <b>${num}</b></a>`).join('')
     : '';
   const html = renderTips({
-    ...tc, route, calls,
+    ...tc, route, calls, share: features.share?.quickLabel(),
     depth: v?.depth, prob: v?.prob,
     place: area?.name || cond.data?.place?.name || null,
     terrain: terrainOf(v?.hand), settle: area?.settle || null,
@@ -1504,6 +1507,7 @@ const near = (d, ll) => d && d.ll.distanceTo(ll) < 30000;
 tipsBody.addEventListener('click', (e) => {
   const act = e.target.closest('[data-act]')?.dataset.act;
   if (act === 'locate') startLocate();
+  else if (act === 'share') features.share?.quick();
   else if (act === 'show-route' && tips.route) {
     features.route.show(tips.route);
     if (phoneMq.matches) toggleTips(false);
@@ -2134,7 +2138,10 @@ setupRail({
 features.route = initRoute(ctx); // Route, then Shelters
 ctx.routeApi = features.route;
 initOffline(ctx);
-initShare(ctx);
+features.share = initShare(ctx);
+// Adding or removing contacts changes the one-tap button's wording in the alert and Tips.
+bus.addEventListener('contacts', () => { checkMe(); tips.html = ''; if (!tipsPop.hidden) refreshTips(); });
+onLang(() => checkMe());
 initMarks(ctx);
 initPast(ctx);
 initTimeline(ctx);

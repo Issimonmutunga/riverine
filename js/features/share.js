@@ -1,6 +1,7 @@
 // Share my situation: a ready-to-send message (where I am, how deep, where I'm heading) for WhatsApp,
-// SMS or the phone's share sheet, plus a link that opens the same place and flood scenario.
-import { addTool } from '../rail.js';
+// SMS or the phone's share sheet; saved emergency contacts who can be texted in one tap from the
+// danger alert or Tips; and a link that opens the same place and flood scenario.
+import { addTool, openTool } from '../rail.js';
 import { t, dist, lang } from '../i18n.js';
 
 // A megaphone shouting: three sound waves radiate from its mouth (animated in CSS).
@@ -11,9 +12,26 @@ const ICON = `<svg class="shout" viewBox="0 0 24 24" aria-hidden="true">
 // Link state: view, analysis box and scenario settings, kept short.
 const LINK_KEYS = { mode: 'm', stage: 's', qref: 'q', qexp: 'b', p24: 'p', runoffC: 'c', cf: 'f', manning: 'n', sigma: 'g', waterLevel: 'w', detail: 'd', danger: 'x' };
 
+// ---------- Emergency contacts (this phone only) ----------
+const CKEY = 'floodDepth.contacts';
+const MAX_CONTACTS = 6;
+const loadContacts = () => { try { return JSON.parse(localStorage.getItem(CKEY)) || []; } catch { return []; } };
+const saveContacts = (list) => { try { localStorage.setItem(CKEY, JSON.stringify(list)); } catch { /* storage unavailable */ } };
+const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const cleanNum = (n) => n.replace(/[^\d+]/g, '');
+/** An SMS link with the message filled in, addressed to one or more numbers (iOS and Android differ). */
+function smsHref(nums, body) {
+  const to = nums.map(cleanNum).filter(Boolean).join(',');
+  const b = encodeURIComponent(body);
+  if (!to) return `sms:?&body=${b}`;
+  if (isIOS) return nums.length > 1 ? `sms:/open?addresses=${to}&body=${b}` : `sms:${to}&body=${b}`;
+  return `sms:${to}?body=${b}`;
+}
+const waHref = (num, body) => `https://wa.me/${num ? num.replace(/\D/g, '') : ''}?text=${encodeURIComponent(body)}`;
+
 export function initShare(ctx) {
   const { map, state, esc } = ctx;
-  let msg = '', building = 0;
+  let msg = '', building = 0, edited = false, composedAt = 0, composedLevel = null, adding = false;
 
   async function compose() {
     const gen = ++building;
@@ -41,7 +59,12 @@ export function initShare(ctx) {
     if (inDanger) lines.push(t('msgNeedHelp'));
     lines.push(`${t('msgMap')}: https://maps.google.com/?q=${ll.lat.toFixed(5)},${ll.lng.toFixed(5)}`);
     lines.push(t('msgTime', { t: new Date().toLocaleString(lang(), { weekday: 'short', hour: '2-digit', minute: '2-digit' }) }));
-    if (gen === building) msg = lines.join('\n');
+    if (gen === building && !edited) {
+      msg = lines.join('\n');
+      composedAt = Date.now();
+      composedLevel = ctx.me.level;
+    }
+    return msg;
   }
 
   function link() {
@@ -57,7 +80,32 @@ export function initShare(ctx) {
     return `${location.origin}${location.pathname}#${p}`;
   }
 
+  // ---------- Pane ----------
+  function contactsHtml() {
+    const list = loadContacts();
+    const rows = list.map((c, i) => `<li data-i="${i}"><div><b>${esc(c.name || c.num)}</b><span>${esc(c.num)}</span></div>
+      <a class="chip" href="${esc(smsHref([c.num], msg))}">${t('shareSms')}</a>
+      ${c.num.trim().startsWith('+') ? `<a class="chip wa" href="${esc(waHref(c.num, msg))}" target="_blank" rel="noopener">${t('shareWhatsApp')}</a>` : ''}
+      <button class="icon del" data-act="del" aria-label="${t('remove')}" title="${t('remove')}"><svg><use href="#i-trash"/></svg></button></li>`).join('');
+    const form = adding ? `<form class="contact-form">
+        <input type="text" name="name" placeholder="${t('contactName')}" aria-label="${t('contactName')}" autocomplete="off" maxlength="40">
+        <input type="tel" name="num" placeholder="+254 712 345 678" aria-label="${t('contactNum')}" required autocomplete="tel" inputmode="tel">
+        <div class="side-btns"><button class="chip go" type="submit">${t('save')}</button><button class="chip" type="button" data-act="cancel-add">${t('cancel')}</button></div>
+      </form>` : list.length < MAX_CONTACTS ? `<button class="chip" data-act="add"><svg><use href="#i-pin"/></svg>${t('addContact')}</button>` : '';
+    return `<h4 class="side-sub">${t('contacts')}</h4>
+      ${list.length ? `<a class="chip text-all" href="${esc(smsHref(list.map((c) => c.num), msg))}"><svg><use href="#i-shout"/></svg>${t('textAll', { n: list.length })}</a>
+        <ul class="side-list contacts">${rows}</ul>` : `<p class="side-note">${t('noContacts')}</p>`}
+      ${form}
+      <p class="side-foot">${t('contactsHint')}</p>`;
+  }
+  function paintContacts() {
+    const box = tool.body.querySelector('.contacts-box');
+    if (box) box.innerHTML = contactsHtml();
+    box?.querySelector('input[name=name]')?.focus();
+  }
+
   async function render(body) {
+    edited = false;
     body.innerHTML = `<p class="side-note">${t('shareIntro')}</p><p class="side-note busy">…</p>`;
     await compose();
     if (!tool.open) return;
@@ -67,18 +115,21 @@ export function initShare(ctx) {
       <textarea class="share-msg" rows="7" aria-label="${t('title.share')}">${esc(msg)}</textarea>
       <div class="side-btns">
         ${navigator.share ? `<button class="chip go" data-act="send">${t('shareSend')}</button>` : ''}
-        <a class="chip wa" href="https://wa.me/?text=${enc}" target="_blank" rel="noopener">${t('shareWhatsApp')}</a>
-        <a class="chip" href="sms:?&body=${enc}">${t('shareSms')}</a>
+        <a class="chip wa wa-any" href="https://wa.me/?text=${enc}" target="_blank" rel="noopener">${t('shareWhatsApp')}</a>
+        <a class="chip sms-any" href="sms:?&body=${enc}">${t('shareSms')}</a>
         <button class="chip" data-act="copy"><svg><use href="#i-copy"/></svg>${t('shareCopy')}</button>
       </div>
+      <div class="contacts-box">${contactsHtml()}</div>
       <h4 class="side-sub">${t('shareLink')}</h4>
       <p class="side-foot">${t('shareLinkHint')}</p>
       <div class="side-btns"><button class="chip" data-act="link"><svg><use href="#i-copy"/></svg>${t('copyLink')}</button></div>`;
     body.querySelector('.share-msg').addEventListener('input', (e) => {
       msg = e.target.value;
+      edited = true;
       const en = encodeURIComponent(msg);
-      body.querySelector('.wa').href = `https://wa.me/?text=${en}`;
-      body.querySelector('a[href^="sms:"]').href = `sms:?&body=${en}`;
+      body.querySelector('.wa-any').href = `https://wa.me/?text=${en}`;
+      body.querySelector('.sms-any').href = `sms:?&body=${en}`;
+      if (!adding) paintContacts();
     });
   }
 
@@ -92,7 +143,7 @@ export function initShare(ctx) {
     setTimeout(() => (btn.innerHTML = old), 1500);
   }
 
-  const tool = addTool({ id: 'share', icon: ICON, render, text: () => msg });
+  const tool = addTool({ id: 'share', icon: ICON, render, text: () => msg, onClose() { adding = false; } });
   tool.body.addEventListener('click', async (e) => {
     const b = e.target.closest('[data-act]');
     const act = b?.dataset.act;
@@ -100,10 +151,50 @@ export function initShare(ctx) {
     else if (act === 'copy') copy(msg, b);
     else if (act === 'link') copy(link(), b);
     else if (act === 'locate') ctx.startLocate();
+    else if (act === 'add') { adding = true; paintContacts(); }
+    else if (act === 'cancel-add') { adding = false; paintContacts(); }
+    else if (act === 'del') {
+      const list = loadContacts();
+      list.splice(+b.closest('li').dataset.i, 1);
+      saveContacts(list);
+      paintContacts();
+      ctx.bus.dispatchEvent(new Event('contacts'));
+    }
   });
-  ctx.bus.addEventListener('location', () => { if (tool.open && !tool.body.contains(document.activeElement)) tool.refresh(); });
-  // The share button pulses when the person is in danger: a nudge to tell someone.
-  ctx.bus.addEventListener('location', () => tool.badge(ctx.me.level === 'danger' ? 'danger' : ''));
+  tool.body.addEventListener('submit', (e) => {
+    if (!e.target.matches('.contact-form')) return;
+    e.preventDefault();
+    const f = new FormData(e.target);
+    const num = String(f.get('num') || '').trim();
+    if (cleanNum(num).replace('+', '').length < 6) return e.target.querySelector('input[name=num]').focus();
+    saveContacts([...loadContacts(), { name: String(f.get('name') || '').trim(), num }].slice(0, MAX_CONTACTS));
+    adding = false;
+    paintContacts();
+    ctx.bus.dispatchEvent(new Event('contacts'));
+  });
+
+  // In danger, keep a message ready so one tap can send it straight away.
+  ctx.bus.addEventListener('location', () => {
+    const lv = ctx.me.level;
+    tool.badge(lv === 'danger' ? 'danger' : '');
+    if ((lv === 'danger' || lv === 'wet') && !edited && (lv !== composedLevel || Date.now() - composedAt > 60000)) compose();
+    if (tool.open && !tool.body.contains(document.activeElement)) tool.refresh();
+  });
+  ctx.bus.addEventListener('scenario', () => { composedAt = 0; });
+
+  /**
+   * One tap from the danger alert or Tips: with saved contacts, open a text to all of them with the
+   * situation filled in (they only press send); without contacts, open the Share pane.
+   */
+  async function quick() {
+    const list = loadContacts();
+    if (!list.length) { openTool('share'); return; }
+    const fresh = msg && Date.now() - composedAt < 60000 && composedLevel === ctx.me.level;
+    // The phone only lets a tap open the messaging app for a moment, so don't wait long for a fresh message.
+    const m = fresh ? msg : await Promise.race([compose(), new Promise((r) => setTimeout(() => r(msg), 1200))]);
+    location.href = smsHref(list.map((c) => c.num), m || msg);
+  }
+  const quickLabel = () => (loadContacts().length ? t('quickText') : t('quickShare'));
 
   // Opening a shared link: go to the place, restore the scenario and analyze it.
   function applyLink() {
@@ -121,4 +212,6 @@ export function initShare(ctx) {
     history.replaceState(null, '', location.pathname + location.search);
   }
   setTimeout(applyLink, 0);
+
+  return { quick, quickLabel, open: () => openTool('share') };
 }

@@ -1121,3 +1121,20 @@ svg.inline { width: 14px; height: 14px; vertical-align: -2px; }
   .side-list b, .bag-list label { font-size: 15px; }
   .rail-btn { height: 70px; }
 }
+
+/* One tap to tell people: in the danger alert, Tips and Share. */
+.share-quick {
+  display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 99px;
+  background: var(--solid); color: #e0301e; font-size: 12.5px; font-weight: 650;
+  box-shadow: inset 0 0 0 1.5px #e0301e;
+}
+.share-quick:hover:not(:disabled) { background: var(--solid); filter: brightness(.97); }
+.share-quick svg { width: 15px; height: 15px; }
+@media (prefers-color-scheme: dark) { .share-quick { color: #ff6961; box-shadow: inset 0 0 0 1.5px #ff6961; } }
+.side-body .chip.text-all { display: flex; justify-content: center; width: 100%; padding: 11px 14px; font-size: 14px; background: #e0301e; color: #fff; }
+.side-body .chip.text-all svg { width: 17px; height: 17px; }
+.side-list.contacts li { cursor: default; }
+.contact-form { display: flex; flex-direction: column; gap: 8px; }
+.side-body input[type=tel] { width: 100%; height: 38px; font: inherit; color: var(--ink); background: var(--card); border: 0; border-radius: 10px; padding: 0 10px; }
+.side-body input[type=tel]:focus, .side-body input[type=text]:focus { outline: none; box-shadow: 0 0 0 3px var(--accent-soft), 0 0 0 1px var(--accent); }
+@media (max-width: 820px) { .side-body input[type=tel], .side-body input[type=text] { font-size: 16px; height: 42px; } }
