@@ -6,7 +6,7 @@ const KEY = 'floodDepth.lang';
 
 const S = {
   en: {
-    'rail.route': 'Route', 'rail.shelters': 'Shelters', 'rail.offline': 'Offline', 'rail.share': 'Share',
+    'rail.route': 'Route', 'rail.shelters': 'Shelters', 'rail.offline': 'Offline', 'rail.share': 'SOS',
     'rail.marks': 'Marks', 'rail.past': 'Past', 'rail.timeline': '10 days', 'rail.lang': 'Language', 'rail.bag': 'Grab bag',
     'title.route': 'Safe route on foot', 'title.shelters': 'Nearest safe shelter', 'title.offline': 'Works offline',
     'title.share': 'Share my situation', 'title.marks': 'Flood marks', 'title.past': 'Past floods',
@@ -56,7 +56,7 @@ const S = {
     offInstall: 'Add to home screen', offIsOffline: 'You’re offline. Your saved area is under Offline on the left.',
   },
   sw: {
-    'rail.route': 'Njia', 'rail.shelters': 'Makazi', 'rail.offline': 'Bila mtandao', 'rail.share': 'Tuma',
+    'rail.route': 'Njia', 'rail.shelters': 'Makazi', 'rail.offline': 'Bila mtandao', 'rail.share': 'SOS',
     'rail.marks': 'Alama', 'rail.past': 'Zamani', 'rail.timeline': 'Siku 10', 'rail.lang': 'Lugha', 'rail.bag': 'Begi',
     'title.route': 'Njia salama kwa miguu', 'title.shelters': 'Makazi salama yaliyo karibu', 'title.offline': 'Inafanya kazi bila mtandao',
     'title.share': 'Tuma hali yangu', 'title.marks': 'Alama za mafuriko', 'title.past': 'Mafuriko ya zamani',
@@ -106,7 +106,7 @@ const S = {
     offInstall: 'Weka kwenye skrini ya mwanzo', offIsOffline: 'Huna mtandao. Eneo lako lililohifadhiwa liko chini ya "Bila mtandao" kushoto.',
   },
   fr: {
-    'rail.route': 'Itinéraire', 'rail.shelters': 'Abris', 'rail.offline': 'Hors ligne', 'rail.share': 'Alerter',
+    'rail.route': 'Itinéraire', 'rail.shelters': 'Abris', 'rail.offline': 'Hors ligne', 'rail.share': 'SOS',
     'rail.marks': 'Repères', 'rail.past': 'Passé', 'rail.timeline': '10 jours', 'rail.lang': 'Langue', 'rail.bag': 'Sac',
     'title.route': 'Itinéraire sûr à pied', 'title.shelters': 'Abri sûr le plus proche', 'title.offline': 'Fonctionne hors ligne',
     'title.share': 'Signaler ma situation', 'title.marks': 'Repères de crue', 'title.past': 'Crues passées',

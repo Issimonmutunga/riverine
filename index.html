@@ -11,7 +11,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
-  <link rel="stylesheet" href="css/style.css?v=20261106e">
+  <link rel="stylesheet" href="css/style.css?v=20261106f">
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -432,10 +432,10 @@
 
   <!-- Phones: the main destinations, within thumb reach -->
   <nav class="tabbar" id="tabbar" aria-label="Main">
-    <button class="tab" type="button" data-tab="map"><svg><use href="#i-wave"/></svg><span>Flood map</span></button>
-    <button class="tab" type="button" data-tab="news"><svg><use href="#i-news"/></svg><span>News</span><b class="tab-n" hidden></b></button>
+    <button class="tab" type="button" data-tab="map" aria-label="Flood map"><span class="word">map</span></button>
+    <button class="tab" type="button" data-tab="news" aria-label="Flood news"><span class="word">news</span><b class="tab-n" hidden></b></button>
     <button class="tab" type="button" data-tab="tips" aria-label="Tips"><span class="word">tips</span></button>
-    <button class="tab tab-share" type="button" data-tab="share"><svg><use href="#i-shout"/></svg><span>Share</span></button>
+    <button class="tab tab-sos" type="button" data-tab="share" aria-label="SOS: share my situation"><span class="word">SOS</span></button>
     <button class="tab" type="button" data-tab="more" aria-label="More tools"><span class="word">more</span><i class="tab-dot" hidden></i></button>
   </nav>
 
@@ -540,6 +540,6 @@
 </dialog>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-<script type="module" src="js/app.js?v=20261106e"></script>
+<script type="module" src="js/app.js?v=20261106f"></script>
 </body>
 </html>
