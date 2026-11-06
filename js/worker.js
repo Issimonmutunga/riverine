@@ -16,6 +16,7 @@ self.onmessage = async (ev) => {
     if (m.type === 'analyze') await analyze(m);
     else if (m.type === 'scenario') scenario(m);
     else if (m.type === 'sample') sample(m);
+    else if (m.type === 'safe') safeGround(m);
     else if (m.type === 'restyle') restyle(m);
     else if (m.type === 'export') exportLayer(m);
   } catch (err) {
@@ -343,6 +344,46 @@ function sample(m) {
       stage: S.hR && reach >= 0 ? S.hR[reach] : null };
   });
   postMessage({ type: 'sampled', id: m.id, values: out });
+}
+
+// Nearest ground that stays dry in the current scenario (no water, under 5% chance of flooding),
+// searched outward from a point, plus the deepest water on the straight line to it.
+function safeGround(m) {
+  if (!S?.depth) throw new Error('Run a flood scenario first.');
+  const { z, x0, y0, W, H, depth, prob, valid, elev } = S;
+  const [lat, lon] = m.point;
+  const c0 = Math.floor(G.lonToPx(lon, z) - x0), r0 = Math.floor(G.latToPx(lat, z) - y0);
+  if (c0 < 0 || r0 < 0 || c0 >= W || r0 >= H) return postMessage({ type: 'safe', id: m.id, safe: null });
+  const mPerPx = G.mercRes(z) * Math.cos(lat * Math.PI / 180);
+  const K = Math.min(Math.ceil((m.maxKm || 8) * 1000 / mPerPx), Math.max(W, H));
+  const dry = (i) => valid[i] && !(depth[i] > 0) && !(prob && prob[i] >= 0.05);
+  let best = -1, bestD2 = Infinity;
+  for (let k = 0; k <= K && k * k < bestD2; k++) {
+    for (let dr = -k; dr <= k; dr++) {
+      const r = r0 + dr;
+      if (r < 0 || r >= H) continue;
+      const step = Math.abs(dr) === k ? 1 : 2 * k; // only the ring's edge
+      for (let dc = -k; dc <= k; dc += step || 1) {
+        const c = c0 + dc;
+        if (c < 0 || c >= W) continue;
+        const i = r * W + c, d2 = dr * dr + dc * dc;
+        if (d2 < bestD2 && dry(i)) { best = i; bestD2 = d2; }
+      }
+    }
+  }
+  if (best < 0) return postMessage({ type: 'safe', id: m.id, safe: null });
+  const rb = Math.floor(best / W), cb = best % W;
+  // Walk the straight line and note the deepest water crossed on the way.
+  const n = Math.max(Math.abs(rb - r0), Math.abs(cb - c0), 1);
+  let cross = 0;
+  for (let s = 1; s <= n; s++) {
+    const i = Math.round(r0 + (rb - r0) * s / n) * W + Math.round(c0 + (cb - c0) * s / n);
+    if (depth[i] > cross) cross = depth[i];
+  }
+  postMessage({ type: 'safe', id: m.id, safe: {
+    lat: G.pxToLat(y0 + rb + 0.5, z), lon: G.pxToLon(x0 + cb + 0.5, z),
+    m: Math.sqrt(bestD2) * mPerPx, elev: valid[best] ? elev[best] : null, cross,
+  } });
 }
 
 function exportLayer(m) {

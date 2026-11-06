@@ -2,6 +2,7 @@
 import * as G from './geo.js';
 import { foldStep, peekPanel, restorePanel, makeRoomForMap } from './panel.js';
 import { coach, coachBusy, restartCoach } from './coach.js';
+import { tipsMode, terrainOf, settlementOf, placeOf, renderTips } from './tips.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -43,7 +44,7 @@ $$('input[name=basemap]').forEach((r) => r.addEventListener('change', () => {
 // Layers popover
 const layersBtn = $('#btnLayers'), layersPop = $('#layersPop');
 function toggleLayers(open = layersPop.hidden) {
-  if (open) toggleNews(false);
+  if (open) { toggleNews(false); toggleTips(false); }
   layersPop.hidden = !open;
   layersBtn.setAttribute('aria-expanded', open);
 }
@@ -1167,6 +1168,7 @@ function renderConditions() {
   $('#nowLinks').innerHTML = `<a class="news-link" href="https://news.google.com/search?q=${q}" target="_blank" rel="noopener">Flood news${place?.name ? ` for ${esc(place.name)}` : ''} ›</a>
     <span>Official: ${official.map(([n, u]) => `<a href="${u}" target="_blank" rel="noopener">${n}</a>`).join(' · ')}</span>`;
   $('#nowFoot').hidden = false;
+  syncTips();
 }
 
 $('#nowUse').addEventListener('click', (e) => {
@@ -1192,6 +1194,7 @@ function toggleNews(open = newsPop.hidden) {
   newsBtn.setAttribute('aria-expanded', open);
   if (open) {
     toggleLayers(false);
+    toggleTips(false);
     peekPanel();
   } else {
     restorePanel();
@@ -1199,7 +1202,7 @@ function toggleNews(open = newsPop.hidden) {
 }
 newsBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleNews(); });
 $('#newsClose').addEventListener('click', () => toggleNews(false));
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') toggleNews(false); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { toggleNews(false); toggleTips(false); } });
 L.DomEvent.disableScrollPropagation(newsPop);
 $('#newsDate').textContent = new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
@@ -1239,6 +1242,7 @@ function stopLocate() {
   locBtn.classList.remove('busy', 'active');
   locBtn.setAttribute('aria-pressed', 'false');
   meAlert.hidden = alertBtn.hidden = true;
+  syncTips();
 }
 
 function drawMe(acc) {
@@ -1319,6 +1323,7 @@ async function checkMe() {
     ${calls || canNotify ? `<div class="me-actions">${calls}
       ${canNotify ? '<button class="chip" data-act="notify"><svg><use href="#i-bell"/></svg>Notify me</button>' : ''}</div>` : ''}`;
   showAlert(me.dismissed !== level);
+  syncTips();
 }
 
 // The callout hangs from the location button; dismissed, it shrinks to a small alert icon below it.
@@ -1337,6 +1342,159 @@ meAlert.addEventListener('click', async (e) => {
     toast(me.notify ? 'You’ll get a notification if your location turns dangerous while this tab is in the background.' : 'Notifications are off for this site.', me.notify ? 'info' : 'notice');
     checkMe();
   }
+});
+
+// ---------------- Tips: safety in the flood zone, adaptation everywhere else ----------------
+// The person's own location decides the mode; without it, Tips advises on the area in view.
+const tipsBtn = $('#btnAdapt'), tipsPop = $('#tipsPop'), tipsBody = $('#tipsBody');
+const phoneMq = matchMedia('(max-width: 820px)');
+const tips = { gen: 0, areaKey: null, area: null, safeLayer: null, safe: undefined, html: '' };
+
+function toggleTips(open = tipsPop.hidden) {
+  if (open === !tipsPop.hidden) return;
+  tipsPop.hidden = !open;
+  tipsBtn.setAttribute('aria-expanded', open);
+  if (open) {
+    toggleNews(false);
+    toggleLayers(false);
+    peekPanel();
+    refreshTips();
+  } else {
+    restorePanel();
+  }
+}
+tipsBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleTips(); });
+$('#tipsClose').addEventListener('click', () => toggleTips(false));
+L.DomEvent.disableScrollPropagation(tipsPop);
+
+// A warning worth getting ready for, from the forecast already loaded for this place.
+function nearbyWarning(d) {
+  if (!d) return null;
+  const { rain, river, alerts } = d;
+  if (river?.chance?.high >= 0.5) return `${Math.round(river.chance.high * 100)}% chance the river reaches high water in the next 10 days.`;
+  if (river && flowLevel(river.peak, river).tone === 'danger') return `The river is forecast to run ${flowLevel(river.peak, river).label.toLowerCase()} by ${dayName(river.peakDay)}.`;
+  const a = (alerts || []).find((e) => e.km < 150 && e.alertlevel !== 'Green');
+  if (a) return `${a.alertlevel} flood alert: ${a.name}, ${fmtInt(a.km)} km away.`;
+  if (rain?.max >= 50) return `Heavy rain forecast ${dayName(rain.day)}: ${fmt(rain.max, 0)} mm.`;
+  return null;
+}
+
+function tipsContext() {
+  const located = !!me.latlng;
+  const ll = me.latlng || map.getCenter();
+  const near = cond.data && cond.data.ll.distanceTo(ll) < 30000 ? cond.data : null;
+  const warnText = nearbyWarning(near);
+  const level = located ? me.level : null;
+  return { ll, located, level, warnText, mode: tipsMode({ level, warn: !!warnText }) };
+}
+
+/** Place name and settlement type (city, town or rural) for a point, cached per ~1 km. */
+function areaInfo(ll) {
+  const key = `${ll.lat.toFixed(2)},${ll.lng.toFixed(2)}`;
+  if (tips.areaKey !== key) {
+    tips.areaKey = key;
+    tips.area = getJSON(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=14&lat=${ll.lat.toFixed(4)}&lon=${ll.lng.toFixed(4)}`)
+      .then((r) => {
+        const a = r.address || {};
+        return { name: placeOf(a), settle: settlementOf(a), cc: a.country_code || '' };
+      })
+      .catch((err) => { console.warn('Place lookup unavailable:', err); tips.areaKey = null; return null; });
+  }
+  return tips.area;
+}
+
+/** Button state at a glance: a red life ring in the flood zone, amber when a warning is near. */
+function syncTips() {
+  const { mode } = tipsContext();
+  tipsBtn.classList.toggle('danger', mode === 'danger');
+  tipsBtn.classList.toggle('ready', mode === 'ready');
+  tipsBtn.querySelector('use').setAttribute('href', mode === 'danger' ? '#i-buoy' : '#i-adapt');
+  const label = mode === 'danger' ? 'Tips: get to safety' : mode === 'ready' ? 'Tips: get ready for a flood' : 'Tips: flood safety and adaptation';
+  tipsBtn.title = label;
+  tipsBtn.setAttribute('aria-label', label);
+  if (mode !== 'danger') clearSafe();
+  if (!tipsPop.hidden) refreshTips();
+}
+
+async function refreshTips() {
+  const gen = ++tips.gen;
+  const ctx = tipsContext();
+  const { ll } = ctx;
+  let v = null;
+  if (state.analysis) {
+    try { ({ values: [v] } = await call({ type: 'sample', points: [[ll.lat, ll.lng]] })); } catch { /* no grid here */ }
+  }
+  let safe;
+  if (ctx.mode === 'danger' && state.scenario) {
+    try { ({ safe } = await call({ type: 'safe', point: [ll.lat, ll.lng], maxKm: 8 })); } catch { safe = undefined; }
+  }
+  const area = await areaInfo(ll);
+  if (gen !== tips.gen) return;
+  tips.safe = safe;
+  // No forecast for this place yet: load it once, and Tips refreshes when it arrives.
+  const ck = `${ll.lat.toFixed(1)},${ll.lng.toFixed(1)}`;
+  if (!near(cond.data, ll) && tips.condFor !== ck) {
+    tips.condFor = ck;
+    showConditionsAt(ll);
+  }
+
+  const calls = ctx.mode === 'danger'
+    ? hotlines(ll).map(([name, num]) => `<a class="hotline" href="tel:${num}"><svg><use href="#i-phone"/></svg>${name} <b>${num}</b></a>`).join('')
+    : '';
+  const html = renderTips({
+    ...ctx, me: ll, safe, calls,
+    depth: v?.depth, prob: v?.prob,
+    place: area?.name || cond.data?.place?.name || null,
+    terrain: terrainOf(v?.hand), settle: area?.settle || null,
+    analysed: !!(v && Number.isFinite(v.hand)),
+  });
+  $('#tipsWhere').textContent = area?.name || (ctx.located ? 'Your location' : 'Area in view');
+  const modeEl = $('#tipsMode');
+  modeEl.textContent = ctx.mode === 'danger' ? 'Safety first' : ctx.mode === 'ready' ? 'Get ready' : 'Adaptation';
+  modeEl.className = ctx.mode;
+  if (html === tips.html) return;
+  // Keep sections the reader opened or closed as they were.
+  const was = new Map($$('.tip-sec', tipsBody).map((d) => [d.querySelector('summary').textContent, d.open]));
+  tips.html = tipsBody.innerHTML = html;
+  for (const d of $$('.tip-sec', tipsBody)) {
+    const k = d.querySelector('summary').textContent;
+    if (was.has(k)) d.open = was.get(k);
+  }
+}
+const near = (d, ll) => d && d.ll.distanceTo(ll) < 30000;
+
+function clearSafe() {
+  tips.safeLayer?.remove();
+  tips.safeLayer = null;
+}
+function showSafe() {
+  const s = tips.safe;
+  if (!s || !me.latlng) return;
+  clearSafe();
+  const to = L.latLng(s.lat, s.lon);
+  tips.safeLayer = L.layerGroup([
+    L.polyline([me.latlng, to], { color: '#34c759', weight: 4, dashArray: '2 8', lineCap: 'round', interactive: false }),
+    L.circleMarker(to, { radius: 9, color: '#fff', weight: 3, fillColor: '#34c759', fillOpacity: 1 })
+      .bindTooltip('Dry ground in this scenario', { direction: 'top', offset: [0, -8] }),
+  ]).addTo(map);
+  // Frame the route in the map space left between the panel and the Tips pane.
+  const side = phoneMq.matches ? [40, 120] : [420, 80];
+  map.fitBounds(L.latLngBounds([me.latlng, to]), { paddingTopLeft: [side[0], side[1]], paddingBottomRight: [phoneMq.matches ? 40 : 400, 80], maxZoom: 17 });
+  if (phoneMq.matches) toggleTips(false);
+}
+
+tipsBody.addEventListener('click', (e) => {
+  const act = e.target.closest('[data-act]')?.dataset.act;
+  if (act === 'locate') startLocate();
+  else if (act === 'show-safe') showSafe();
+});
+
+// Without a location, Tips follows the map.
+let tipsMoveTimer;
+map.on('moveend', () => {
+  if (me.latlng) return;
+  clearTimeout(tipsMoveTimer);
+  tipsMoveTimer = setTimeout(syncTips, 400);
 });
 
 // ---------------- Your shapes (shapefile / GeoJSON) ----------------
@@ -1699,3 +1857,194 @@ coach(state.aoi ? 'run' : 'area');
 
 // Console access for power users: floodDepth.state.analysis, floodDepth.map, …
 window.floodDepth = { map, state };
+
+
+
+// ── Saved places ──────────────────────────────────────────────────────────────
+import { savePlace, loadPlaces, deletePlace, getScriptUrl, setScriptUrl, testScriptUrl } from './places.js';
+
+/** Render the saved-places list in the panel. */
+function renderSavedList() {
+  const panel  = $('#savedPlacesPanel');
+  const list   = $('#savedList');
+  const empty  = $('#savedEmpty');
+  const places = loadPlaces();
+
+  // Always show panel once the user has opened it (caller controls visibility)
+  list.innerHTML = '';
+
+  if (!places.length) {
+    if (empty) empty.hidden = false;
+    return;
+  }
+  if (empty) empty.hidden = true;
+  for (const p of places) {
+    const li  = document.createElement('li');
+    const date = new Date(p.savedAt).toLocaleDateString(undefined,
+      { month: 'short', day: 'numeric', year: 'numeric' });
+    li.innerHTML =
+      '<span class="sl-pin"><svg><use href="#i-pin"/></svg></span>' +
+      '<span class="sl-body">' +
+        `<span class="sl-name">${esc(p.name)}</span>` +
+        '<span class="sl-meta">' +
+          `<span>${date}</span>` +
+          (p.note ? `<span class="sl-note">${esc(p.note)}</span>` : '') +
+        '</span>' +
+      '</span>' +
+      '<button class="sl-del" aria-label="Remove" title="Remove"><svg><use href="#i-trash"/></svg></button>';
+
+    // Row click → fly to bounding box
+    li.querySelector('.sl-body').addEventListener('click', () => {
+      const b = p.bbox;
+      if (!b) return;
+      map.fitBounds(L.latLngBounds([b.s, b.w], [b.n, b.e]), { padding: [24, 24], maxZoom: 18 });
+      makeRoomForMap();
+    });
+
+    // Delete
+    li.querySelector('.sl-del').addEventListener('click', (e) => {
+      e.stopPropagation();
+      deletePlace(p.id);
+      renderSavedList();
+      updateSaveButton();
+    });
+
+    list.append(li);
+  }
+}
+
+/** Glow the bookmark button when the current AOI is already saved. */
+function updateSaveButton() {
+  const btn = $('#btnSavePlace');
+  if (!btn) return;
+  const aoi = state.aoi;
+  if (!aoi) { btn.setAttribute('aria-pressed', 'false'); return; }
+  const c = aoi.getCenter();
+  const already = loadPlaces().some((p) => {
+    if (!p.bbox) return false;
+    return Math.abs(p.bbox.lat - c.lat) < 0.001 && Math.abs(p.bbox.lng - c.lng) < 0.001;
+  });
+  btn.setAttribute('aria-pressed', already ? 'true' : 'false');
+}
+
+// ── Google Sheets config panel ────────────────────────────────────────────────
+function initSheetsConfig() {
+  const btn    = $('#btnSheets');
+  const config = $('#sheetsConfig');
+  const urlIn  = $('#sheetsUrl');
+  const okBtn  = $('#btnSheetsOk');
+  const status = $('#sheetsStatus');
+
+  if (!btn || !config) return;
+
+  // Restore saved URL
+  const saved = getScriptUrl();
+  if (saved) {
+    urlIn.value = saved;
+    status.textContent = 'Connected \u2713';
+    status.className = 'hint sheets-status ok';
+    btn.classList.add('sheets-linked');
+  }
+
+  // Toggle config panel
+  btn.addEventListener('click', () => {
+    const open = config.hidden;
+    config.hidden = !open;
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) urlIn.focus();
+  });
+
+  // "How to get this" link → open guide dialog
+  const help = $('#btnSheetsHelp');
+  if (help) {
+    help.addEventListener('click', (e) => {
+      e.preventDefault();
+      $('#sheetsGuide').showModal();
+    });
+  }
+
+  // Save / test the URL
+  okBtn.addEventListener('click', async () => {
+    const url = urlIn.value.trim();
+    if (!url) {
+      setScriptUrl('');
+      status.textContent = 'Disconnected.';
+      status.className = 'hint sheets-status';
+      btn.classList.remove('sheets-linked');
+      return;
+    }
+    status.textContent = 'Testing\u2026';
+    status.className = 'hint sheets-status';
+    okBtn.disabled = true;
+    try {
+      await testScriptUrl(url);
+      setScriptUrl(url);
+      status.textContent = 'Connected \u2713 — new saves will appear in your Sheet.';
+      status.className = 'hint sheets-status ok';
+      btn.classList.add('sheets-linked');
+      config.hidden = true;
+      btn.setAttribute('aria-expanded', 'false');
+    } catch (err) {
+      status.textContent = `Could not reach the script: ${err.message}`;
+      status.className = 'hint sheets-status err';
+    } finally {
+      okBtn.disabled = false;
+    }
+  });
+
+  urlIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') okBtn.click(); });
+}
+
+// ── Save button → dialog ──────────────────────────────────────────────────────
+$('#btnSavePlace').addEventListener('click', () => {
+  const panel = $('#savedPlacesPanel');
+  // Show the panel if not yet visible
+  panel.hidden = false;
+  // Open the save dialog
+  const dlg  = $('#savePlaceDialog');
+  const name = $('#saveName');
+  name.value = $('#searchInput').value.trim() || '';
+  $('#saveNote').value = '';
+  dlg.showModal();
+  name.select();
+});
+
+// ── Dialog cancel ─────────────────────────────────────────────────────────────
+['#btnCancelSave', '#btnCancelSave2'].forEach((sel) => {
+  const btn = document.querySelector(sel);
+  if (btn) btn.addEventListener('click', () => $('#savePlaceDialog').close());
+});
+
+// ── Dialog confirm ────────────────────────────────────────────────────────────
+$('#savePlaceForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const b    = state.aoi;
+  const c    = b?.getCenter();
+  const bbox = b ? {
+    w: b.getWest(), s: b.getSouth(), e: b.getEast(), n: b.getNorth(),
+    lat: c.lat, lng: c.lng,
+  } : null;
+  savePlace({
+    name: $('#saveName').value.trim() || 'Unnamed place',
+    bbox,
+    note: $('#saveNote').value.trim(),
+  });
+  $('#savePlaceDialog').close();
+  $('#savedPlacesPanel').hidden = false;
+  renderSavedList();
+  updateSaveButton();
+  toast('Place saved.', 'info', 2800);
+});
+
+// ── Close saved panel ─────────────────────────────────────────────────────────
+$('#btnCloseSaved').addEventListener('click', () => {
+  $('#savedPlacesPanel').hidden = true;
+  $('#btnSavePlace').setAttribute('aria-pressed', 'false');
+});
+
+// ── Initial render ────────────────────────────────────────────────────────────
+initSheetsConfig();
+renderSavedList();
+// Show the panel on load if there are already saved places
+if (loadPlaces().length) $('#savedPlacesPanel').hidden = false;
+updateSaveButton();
