@@ -16,7 +16,7 @@ self.onmessage = async (ev) => {
     if (m.type === 'analyze') await analyze(m);
     else if (m.type === 'scenario') scenario(m);
     else if (m.type === 'sample') sample(m);
-    else if (m.type === 'safe') safeGround(m);
+    else if (m.type === 'route') route(m);
     else if (m.type === 'restyle') restyle(m);
     else if (m.type === 'export') exportLayer(m);
   } catch (err) {
@@ -346,43 +346,99 @@ function sample(m) {
   postMessage({ type: 'sampled', id: m.id, values: out });
 }
 
-// Nearest ground that stays dry in the current scenario (no water, under 5% chance of flooding),
-// searched outward from a point, plus the deepest water on the straight line to it.
-function safeGround(m) {
+// Safest walking route from a point: Dijkstra over the grid, where each step costs its length times a
+// penalty that grows with the water depth on it. It ends at the first target reached (shelters), or at
+// the first dry cell (no water, under 5% chance of flooding) when no targets are given.
+function route(m) {
   if (!S?.depth) throw new Error('Run a flood scenario first.');
-  const { z, x0, y0, W, H, depth, prob, valid, elev } = S;
-  const [lat, lon] = m.point;
+  const { z, x0, y0, W, H, depth, prob, valid } = S;
+  const [lat, lon] = m.start;
   const c0 = Math.floor(G.lonToPx(lon, z) - x0), r0 = Math.floor(G.latToPx(lat, z) - y0);
-  if (c0 < 0 || r0 < 0 || c0 >= W || r0 >= H) return postMessage({ type: 'safe', id: m.id, safe: null });
+  if (c0 < 0 || r0 < 0 || c0 >= W || r0 >= H) return postMessage({ type: 'route', id: m.id, route: null, reason: 'outside' });
   const mPerPx = G.mercRes(z) * Math.cos(lat * Math.PI / 180);
-  const K = Math.min(Math.ceil((m.maxKm || 8) * 1000 / mPerPx), Math.max(W, H));
+  const R = Math.ceil((m.maxKm || 8) * 1000 / mPerPx);
+  const cA = Math.max(0, c0 - R), rA = Math.max(0, r0 - R), cB = Math.min(W - 1, c0 + R), rB = Math.min(H - 1, r0 + R);
+  const bw = cB - cA + 1, bh = rB - rA + 1, n = bw * bh;
+  const gi = (k) => (rA + Math.floor(k / bw)) * W + cA + (k % bw);
+  const wet = (i) => (depth[i] > 0 ? depth[i] : 0);
   const dry = (i) => valid[i] && !(depth[i] > 0) && !(prob && prob[i] >= 0.05);
-  let best = -1, bestD2 = Infinity;
-  for (let k = 0; k <= K && k * k < bestD2; k++) {
-    for (let dr = -k; dr <= k; dr++) {
-      const r = r0 + dr;
-      if (r < 0 || r >= H) continue;
-      const step = Math.abs(dr) === k ? 1 : 2 * k; // only the ring's edge
-      for (let dc = -k; dc <= k; dc += step || 1) {
-        const c = c0 + dc;
-        if (c < 0 || c >= W) continue;
-        const i = r * W + c, d2 = dr * dr + dc * dc;
-        if (d2 < bestD2 && dry(i)) { best = i; bestD2 = d2; }
+  // Targets as local cell indices
+  let targets = null;
+  if (m.targets) {
+    targets = new Map();
+    m.targets.forEach(([tl, tn], ti) => {
+      const c = Math.floor(G.lonToPx(tn, z) - x0) - cA, r = Math.floor(G.latToPx(tl, z) - y0) - rA;
+      if (c >= 0 && r >= 0 && c < bw && r < bh && !targets.has(r * bw + c)) targets.set(r * bw + c, ti);
+    });
+    if (!targets.size) return postMessage({ type: 'route', id: m.id, route: null, reason: 'none' });
+  }
+  const isGoal = targets ? (k) => targets.has(k) : (k) => dry(gi(k));
+  const cost = new Float64Array(n).fill(Infinity), prev = new Int32Array(n).fill(-1);
+  // Binary heap of [cost, k]
+  const hc = [], hk = [];
+  const push = (c, k) => {
+    let i = hc.length; hc.push(c); hk.push(k);
+    while (i > 0) { const p = (i - 1) >> 1; if (hc[p] <= c) break; hc[i] = hc[p]; hk[i] = hk[p]; i = p; }
+    hc[i] = c; hk[i] = k;
+  };
+  const pop = () => {
+    const k = hk[0], lc = hc.pop(), lk = hk.pop();
+    if (hc.length) {
+      let i = 0;
+      for (;;) {
+        let ch = 2 * i + 1;
+        if (ch >= hc.length) break;
+        if (ch + 1 < hc.length && hc[ch + 1] < hc[ch]) ch++;
+        if (hc[ch] >= lc) break;
+        hc[i] = hc[ch]; hk[i] = hk[ch]; i = ch;
       }
+      hc[i] = lc; hk[i] = lk;
+    }
+    return k;
+  };
+  const start = (r0 - rA) * bw + (c0 - cA);
+  cost[start] = 0; push(0, start);
+  const done = new Uint8Array(n);
+  const DR = [-1, -1, -1, 0, 0, 1, 1, 1], DC = [-1, 0, 1, -1, 1, -1, 0, 1];
+  let goal = -1;
+  while (hc.length) {
+    const cur = hc[0], k = pop();
+    if (done[k]) continue;
+    done[k] = 1;
+    if (isGoal(k) && (k !== start || targets)) { goal = k; break; }
+    const r = Math.floor(k / bw), c = k % bw;
+    for (let d = 0; d < 8; d++) {
+      const rr = r + DR[d], cc = c + DC[d];
+      if (rr < 0 || cc < 0 || rr >= bh || cc >= bw) continue;
+      const kk = rr * bw + cc, i = gi(kk);
+      if (done[kk] || !valid[i]) continue; // open sea and lakes are not walkable
+      const dep = wet(i);
+      // Water slows you and is risky: 0.3 m costs ~3.4×, 1 m ~13×, and over 1.2 m (swimming) much more.
+      const step = (DR[d] && DC[d] ? Math.SQRT2 : 1) * (1 + 8 * dep + (dep > 1.2 ? 40 : 0));
+      const nc = cur + step;
+      if (nc < cost[kk]) { cost[kk] = nc; prev[kk] = k; push(nc, kk); }
     }
   }
-  if (best < 0) return postMessage({ type: 'safe', id: m.id, safe: null });
-  const rb = Math.floor(best / W), cb = best % W;
-  // Walk the straight line and note the deepest water crossed on the way.
-  const n = Math.max(Math.abs(rb - r0), Math.abs(cb - c0), 1);
-  let cross = 0;
-  for (let s = 1; s <= n; s++) {
-    const i = Math.round(r0 + (rb - r0) * s / n) * W + Math.round(c0 + (cb - c0) * s / n);
-    if (depth[i] > cross) cross = depth[i];
+  if (goal < 0) return postMessage({ type: 'route', id: m.id, route: null, reason: 'nodry' });
+  const cells = [];
+  for (let k = goal; k >= 0; k = prev[k]) cells.push(k);
+  cells.reverse();
+  let len = 0, wetLen = 0, maxDepth = 0;
+  for (let j = 1; j < cells.length; j++) {
+    const a = cells[j - 1], b = cells[j];
+    const sl = (Math.floor(a / bw) !== Math.floor(b / bw) && a % bw !== b % bw ? Math.SQRT2 : 1) * mPerPx;
+    const dep = wet(gi(b));
+    len += sl;
+    if (dep > 0.05) wetLen += sl;
+    if (dep > maxDepth) maxDepth = dep;
   }
-  postMessage({ type: 'safe', id: m.id, safe: {
-    lat: G.pxToLat(y0 + rb + 0.5, z), lon: G.pxToLon(x0 + cb + 0.5, z),
-    m: Math.sqrt(bestD2) * mPerPx, elev: valid[best] ? elev[best] : null, cross,
+  const every = Math.max(1, Math.ceil(cells.length / 500));
+  const path = cells.filter((_, j) => j % every === 0 || j === cells.length - 1).map((k) => {
+    const r = rA + Math.floor(k / bw) + 0.5, c = cA + (k % bw) + 0.5;
+    return [G.pxToLat(y0 + r, z), G.pxToLon(x0 + c, z)];
+  });
+  postMessage({ type: 'route', id: m.id, route: {
+    path, m: len, wetM: wetLen, maxDepth, target: targets ? targets.get(goal) : -1, startDepth: wet(gi(start)),
   } });
 }
 

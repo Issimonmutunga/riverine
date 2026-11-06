@@ -2,7 +2,17 @@
 import * as G from './geo.js';
 import { foldStep, peekPanel, restorePanel, makeRoomForMap } from './panel.js';
 import { coach, coachBusy, restartCoach } from './coach.js';
-import { tipsMode, terrainOf, settlementOf, placeOf, renderTips } from './tips.js';
+import { tipsMode, terrainOf, settlementOf, placeOf, renderTips, tipsHeader } from './tips.js';
+import { t, lang, languages, onLang, speak, stopSpeak, isSpeaking } from './i18n.js';
+import { setupRail, openTool, closeTools } from './rail.js';
+import { initRoute } from './features/route.js';
+import { initOffline } from './features/offline.js';
+import { initShare } from './features/share.js';
+import { initMarks } from './features/marks.js';
+import { initPast } from './features/past.js';
+import { initTimeline } from './features/timeline.js';
+import { initLanguage } from './features/language.js';
+import { initChecklist } from './features/checklist.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -44,7 +54,7 @@ $$('input[name=basemap]').forEach((r) => r.addEventListener('change', () => {
 // Layers popover
 const layersBtn = $('#btnLayers'), layersPop = $('#layersPop');
 function toggleLayers(open = layersPop.hidden) {
-  if (open) { toggleNews(false); toggleTips(false); }
+  if (open) { toggleNews(false); toggleTips(false); closeTools(); }
   layersPop.hidden = !open;
   layersBtn.setAttribute('aria-expanded', open);
 }
@@ -397,6 +407,7 @@ async function runAnalysis() {
     setTimeout(() => ($('#progress').hidden = true), 1800);
     makeRoomForMap();
     coach('scenario');
+    emit('analysis');
     showConditionsAt(gridBounds(res.grid).getCenter());
     await runScenario();
     $('#stepScenario').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -414,12 +425,21 @@ async function runAnalysis() {
   }
 }
 
+// The last area's mapped rivers are kept on the device, so it can be analysed again without a signal.
+const RIVERS_KEY = 'floodDepth.rivers';
 async function fetchRivers(b) {
   const q = `[out:json][timeout:25];way["waterway"~"^(river|canal)$"](${b.s},${b.w},${b.n},${b.e});out geom;`;
+  const key = [b.w, b.s, b.e, b.n].map((x) => x.toFixed(4)).join(',');
   try {
     const json = await overpass(q, 30000, () => setProgress('Fetching mapped rivers…', 3));
-    return json.elements.filter((e) => e.geometry).map((e) => e.geometry.map((p) => [p.lat, p.lon]));
+    const lines = json.elements.filter((e) => e.geometry).map((e) => e.geometry.map((p) => [+p.lat.toFixed(5), +p.lon.toFixed(5)]));
+    try { localStorage.setItem(RIVERS_KEY, JSON.stringify({ key, lines })); } catch { /* too big to keep */ }
+    return lines;
   } catch (err) {
+    try {
+      const kept = JSON.parse(localStorage.getItem(RIVERS_KEY));
+      if (kept?.key === key) return kept.lines;
+    } catch { /* nothing kept */ }
     toast('Mapped rivers didn’t load, so streams are traced from the terrain alone.', 'notice');
     return [];
   }
@@ -438,6 +458,7 @@ function clearResults() {
   $('#legend').hidden = true;
   clearShapeResults();
   checkMe();
+  emit('analysis');
 }
 
 function rgbaToURL(rgba, W, H) {
@@ -609,6 +630,7 @@ async function runScenario() {
     showDangerReadout(s.deepKm2);
     await Promise.all([setOverlay('depth', res.depthImg, 230), setOverlay('prob', res.probImg, 230)]);
     if (state.exposure) await sampleExposure();
+    emit('scenario');
     await Promise.all([checkShapes(), checkMe()]);
   } catch (err) {
     toast(err.message, true);
@@ -1169,6 +1191,7 @@ function renderConditions() {
     <span>Official: ${official.map(([n, u]) => `<a href="${u}" target="_blank" rel="noopener">${n}</a>`).join(' · ')}</span>`;
   $('#nowFoot').hidden = false;
   syncTips();
+  emit('conditions');
 }
 
 $('#nowUse').addEventListener('click', (e) => {
@@ -1195,6 +1218,7 @@ function toggleNews(open = newsPop.hidden) {
   if (open) {
     toggleLayers(false);
     toggleTips(false);
+    closeTools();
     peekPanel();
   } else {
     restorePanel();
@@ -1324,6 +1348,7 @@ async function checkMe() {
       ${canNotify ? '<button class="chip" data-act="notify"><svg><use href="#i-bell"/></svg>Notify me</button>' : ''}</div>` : ''}`;
   showAlert(me.dismissed !== level);
   syncTips();
+  emit('location');
 }
 
 // The callout hangs from the location button; dismissed, it shrinks to a small alert icon below it.
@@ -1348,7 +1373,7 @@ meAlert.addEventListener('click', async (e) => {
 // The person's own location decides the mode; without it, Tips advises on the area in view.
 const tipsBtn = $('#btnAdapt'), tipsPop = $('#tipsPop'), tipsBody = $('#tipsBody');
 const phoneMq = matchMedia('(max-width: 820px)');
-const tips = { gen: 0, areaKey: null, area: null, safeLayer: null, safe: undefined, html: '' };
+const tips = { gen: 0, areaKey: null, area: null, route: null, html: '', mode: null };
 
 function toggleTips(open = tipsPop.hidden) {
   if (open === !tipsPop.hidden) return;
@@ -1357,15 +1382,25 @@ function toggleTips(open = tipsPop.hidden) {
   if (open) {
     toggleNews(false);
     toggleLayers(false);
+    closeTools();
     peekPanel();
     refreshTips();
   } else {
+    stopSpeak();
+    $('#tipsSpeak').classList.remove('on');
     restorePanel();
   }
 }
 tipsBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleTips(); });
 $('#tipsClose').addEventListener('click', () => toggleTips(false));
 L.DomEvent.disableScrollPropagation(tipsPop);
+$('#tipsSpeak').addEventListener('click', (e) => {
+  const b = e.currentTarget;
+  if (isSpeaking()) { stopSpeak(); b.classList.remove('on'); return; }
+  const said = speak(tipsBody.innerText, () => b.classList.remove('on'));
+  if (said) b.classList.add('on');
+  if (said === 'novoice') toast(t('noVoice', { lang: languages[lang()] }), 'notice');
+});
 
 // A warning worth getting ready for, from the forecast already loaded for this place.
 function nearbyWarning(d) {
@@ -1403,34 +1438,35 @@ function areaInfo(ll) {
   return tips.area;
 }
 
-/** Button state at a glance: a red life ring in the flood zone, amber when a warning is near. */
+/** Button state at a glance: red in the flood zone, amber when a warning is near. */
 function syncTips() {
-  const { mode } = tipsContext();
-  tipsBtn.classList.toggle('danger', mode === 'danger');
-  tipsBtn.classList.toggle('ready', mode === 'ready');
-  tipsBtn.querySelector('use').setAttribute('href', mode === 'danger' ? '#i-buoy' : '#i-adapt');
-  const label = mode === 'danger' ? 'Tips: get to safety' : mode === 'ready' ? 'Tips: get ready for a flood' : 'Tips: flood safety and adaptation';
+  const { mode: m } = tipsContext();
+  tipsBtn.classList.toggle('danger', m === 'danger');
+  tipsBtn.classList.toggle('ready', m === 'ready');
+  const label = m === 'danger' ? 'Tips: get to safety' : m === 'ready' ? 'Tips: get ready for a flood' : 'Tips: flood safety and adaptation';
   tipsBtn.title = label;
   tipsBtn.setAttribute('aria-label', label);
-  if (mode !== 'danger') clearSafe();
   if (!tipsPop.hidden) refreshTips();
 }
 
 async function refreshTips() {
   const gen = ++tips.gen;
-  const ctx = tipsContext();
-  const { ll } = ctx;
+  const tc = tipsContext();
+  const { ll } = tc;
   let v = null;
   if (state.analysis) {
     try { ({ values: [v] } = await call({ type: 'sample', points: [[ll.lat, ll.lng]] })); } catch { /* no grid here */ }
   }
-  let safe;
-  if (ctx.mode === 'danger' && state.scenario) {
-    try { ({ safe } = await call({ type: 'safe', point: [ll.lat, ll.lng], maxKm: 8 })); } catch { safe = undefined; }
+  // In the flood zone: the water-avoiding route to the nearest dry shelter (or dry ground).
+  let route = null;
+  if (tc.mode === 'danger' && state.scenario && features.route) {
+    const r = await features.route.nearest(ll);
+    if (gen !== tips.gen) return;
+    tips.route = r && !r.none ? r : null;
+    route = r?.none === 'nodry' ? 'none' : tips.route ? features.route.summary(tips.route) : null;
   }
   const area = await areaInfo(ll);
   if (gen !== tips.gen) return;
-  tips.safe = safe;
   // No forecast for this place yet: load it once, and Tips refreshes when it arrives.
   const ck = `${ll.lat.toFixed(1)},${ll.lng.toFixed(1)}`;
   if (!near(cond.data, ll) && tips.condFor !== ck) {
@@ -1438,56 +1474,42 @@ async function refreshTips() {
     showConditionsAt(ll);
   }
 
-  const calls = ctx.mode === 'danger'
+  const calls = tc.mode === 'danger'
     ? hotlines(ll).map(([name, num]) => `<a class="hotline" href="tel:${num}"><svg><use href="#i-phone"/></svg>${name} <b>${num}</b></a>`).join('')
     : '';
   const html = renderTips({
-    ...ctx, me: ll, safe, calls,
+    ...tc, route, calls,
     depth: v?.depth, prob: v?.prob,
     place: area?.name || cond.data?.place?.name || null,
     terrain: terrainOf(v?.hand), settle: area?.settle || null,
     analysed: !!(v && Number.isFinite(v.hand)),
   });
-  $('#tipsWhere').textContent = area?.name || (ctx.located ? 'Your location' : 'Area in view');
+  const head = tipsHeader(tc.mode, tc.located);
+  $('#tipsWhere').textContent = area?.name || head.where;
   const modeEl = $('#tipsMode');
-  modeEl.textContent = ctx.mode === 'danger' ? 'Safety first' : ctx.mode === 'ready' ? 'Get ready' : 'Adaptation';
-  modeEl.className = ctx.mode;
+  modeEl.textContent = head.mode;
+  modeEl.className = tc.mode;
+  $('#tipsSpeak').title = head.listen;
+  $('#tipsSpeak').setAttribute('aria-label', head.listen);
   if (html === tips.html) return;
   // Keep sections the reader opened or closed as they were.
-  const was = new Map($$('.tip-sec', tipsBody).map((d) => [d.querySelector('summary').textContent, d.open]));
+  const was = $$('.tip-sec', tipsBody).map((d) => d.open);
+  const sameShape = tips.mode === tc.mode;
   tips.html = tipsBody.innerHTML = html;
-  for (const d of $$('.tip-sec', tipsBody)) {
-    const k = d.querySelector('summary').textContent;
-    if (was.has(k)) d.open = was.get(k);
-  }
+  tips.mode = tc.mode;
+  if (sameShape) $$('.tip-sec', tipsBody).forEach((d, i) => { if (i < was.length) d.open = was[i]; });
 }
 const near = (d, ll) => d && d.ll.distanceTo(ll) < 30000;
-
-function clearSafe() {
-  tips.safeLayer?.remove();
-  tips.safeLayer = null;
-}
-function showSafe() {
-  const s = tips.safe;
-  if (!s || !me.latlng) return;
-  clearSafe();
-  const to = L.latLng(s.lat, s.lon);
-  tips.safeLayer = L.layerGroup([
-    L.polyline([me.latlng, to], { color: '#34c759', weight: 4, dashArray: '2 8', lineCap: 'round', interactive: false }),
-    L.circleMarker(to, { radius: 9, color: '#fff', weight: 3, fillColor: '#34c759', fillOpacity: 1 })
-      .bindTooltip('Dry ground in this scenario', { direction: 'top', offset: [0, -8] }),
-  ]).addTo(map);
-  // Frame the route in the map space left between the panel and the Tips pane.
-  const side = phoneMq.matches ? [40, 120] : [420, 80];
-  map.fitBounds(L.latLngBounds([me.latlng, to]), { paddingTopLeft: [side[0], side[1]], paddingBottomRight: [phoneMq.matches ? 40 : 400, 80], maxZoom: 17 });
-  if (phoneMq.matches) toggleTips(false);
-}
 
 tipsBody.addEventListener('click', (e) => {
   const act = e.target.closest('[data-act]')?.dataset.act;
   if (act === 'locate') startLocate();
-  else if (act === 'show-safe') showSafe();
+  else if (act === 'show-route' && tips.route) {
+    features.route.show(tips.route);
+    if (phoneMq.matches) toggleTips(false);
+  } else if (act === 'bag') { toggleTips(false); openTool('bag'); }
 });
+onLang(() => { tips.html = ''; if (!tipsPop.hidden) refreshTips(); });
 
 // Without a location, Tips follows the map.
 let tipsMoveTimer;
@@ -1496,6 +1518,60 @@ map.on('moveend', () => {
   clearTimeout(tipsMoveTimer);
   tipsMoveTimer = setTimeout(syncTips, 400);
 });
+
+// ---------------- Shared pieces for the tools behind "more" ----------------
+const bus = new EventTarget();
+const emit = (type) => bus.dispatchEvent(new Event(type));
+let scenarioGen = 0;
+bus.addEventListener('scenario', () => { scenarioGen++; });
+// Shelters found in the background: Tips can now route to one instead of to bare dry ground.
+bus.addEventListener('shelters', () => { if (!tipsPop.hidden) refreshTips(); });
+
+const UI_FIELDS = { stage: '#stage', p24: '#p24', cf: '#cf', runoffC: '#runoffC', qref: '#qref', qexp: '#qexp', manning: '#manning', sigma: '#sigma', danger: '#danger', waterLevel: '#waterLevel', detail: '#detail', thresh: '#thresh' };
+/** The panel's settings, so an area can be saved or shared and reopened the same way. */
+function uiSettings() {
+  const ui = { mode };
+  for (const [k, sel] of Object.entries(UI_FIELDS)) ui[k] = $(sel).value;
+  ui.maskSea = $('#maskSea').checked ? 1 : 0;
+  ui.burn = $('#burn').checked ? 1 : 0;
+  return ui;
+}
+function applyUiSettings(ui = {}) {
+  for (const [k, sel] of Object.entries(UI_FIELDS)) if (ui[k] != null && ui[k] !== '') $(sel).value = ui[k];
+  if (ui.maskSea != null) $('#maskSea').checked = !!+ui.maskSea;
+  if (ui.burn != null) $('#burn').checked = !!+ui.burn;
+  $('#stageOut').textContent = `${(+$('#stage').value).toFixed(1)} m`;
+  $('#sigmaOut').textContent = `${(+$('#sigma').value).toFixed(1)} m`;
+  $('#dangerOut').textContent = `${(+$('#danger').value).toFixed(1)} m`;
+  if (ui.mode && ui.mode !== mode) {
+    mode = ui.mode;
+    $$('#modeTabs button').forEach((x) => x.setAttribute('aria-selected', x.dataset.mode === mode));
+    $$('.mode').forEach((el) => (el.hidden = el.dataset.mode !== mode));
+  }
+}
+/** Set an area (and optionally analyze it straight away). */
+function openArea(bounds, run = false) {
+  setDemSource('global');
+  setAOI(bounds);
+  fitArea(bounds);
+  if (run) runAnalysis();
+}
+/** Switch the scenario to a water level or a discharge and recompute it. */
+function useScenario({ mode: m, stage, qref }) {
+  if (m === 'stage' && stage != null) { $('#stage').value = stage; $('#stageOut').textContent = `${(+stage).toFixed(1)} m`; }
+  if (m === 'flow' && qref != null) $('#qref').value = qref;
+  if (mode !== m) { $(`#modeTabs [data-mode=${m}]`).click(); return; }
+  return runScenario();
+}
+
+const features = {};
+const ctx = {
+  map, state, call, toast, esc, fmt, fmtInt, me, bus,
+  startLocate, hotlines, overpass, areaInfo, dangerDepth, scenarioParams,
+  cond: () => cond.data, areaName: () => $('#searchInput').value.trim() || cond.data?.place?.name || '',
+  isPhone: () => phoneMq.matches, scenarioGen: () => scenarioGen,
+  uiSettings, applyUiSettings, openArea, useScenario, getScriptUrl,
+};
 
 // ---------------- Your shapes (shapefile / GeoJSON) ----------------
 let shpReader = null;
@@ -2048,3 +2124,19 @@ renderSavedList();
 // Show the panel on load if there are already saved places
 if (loadPlaces().length) $('#savedPlacesPanel').hidden = false;
 updateSaveButton();
+
+// ---------------- More tools (behind the "more" button), in order of priority ----------------
+setupRail({
+  toast,
+  // The tools share the right-hand column with News, Tips and Layers: one pane at a time.
+  onOpen() { toggleNews(false); toggleTips(false); toggleLayers(false); },
+});
+features.route = initRoute(ctx); // Route, then Shelters
+ctx.routeApi = features.route;
+initOffline(ctx);
+initShare(ctx);
+initMarks(ctx);
+initPast(ctx);
+initTimeline(ctx);
+initLanguage();
+initChecklist(ctx);
