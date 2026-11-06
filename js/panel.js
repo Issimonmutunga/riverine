@@ -1,5 +1,7 @@
-// Panel behaviour: foldable steps, a draggable/collapsible card on desktop, and a slide-in drawer on phones.
+// Panel behaviour: foldable steps, a draggable/collapsible card on desktop, and a bottom sheet on phones.
+// On phones the sheet has three heights, like Google and Apple Maps: peek (search only), half and full.
 const panel = document.getElementById('panel');
+const app = document.getElementById('app');
 const head = panel.querySelector('.brand');
 const search = panel.querySelector('.search');
 const toggleBtn = document.getElementById('btnSheet');
@@ -61,80 +63,126 @@ function setCollapsed(on) {
   syncToggle();
 }
 
-// ---------------- Phone: a drawer that slides in from the left ----------------
-const pill = document.getElementById('btnDrawer');
-let drawerOpen = true, beforePeek = null;
-export function setDrawer(open) {
-  drawerOpen = open;
-  panel.classList.toggle('drawer-closed', !open);
-  panel.style.removeProperty('--drawer-x');
-  pill.setAttribute('aria-expanded', open);
-  syncToggle();
+// ---------------- Phone: a bottom sheet with three heights ----------------
+const ORDER = ['peek', 'half', 'full'];
+let sheet = 'peek', beforePeek = null;
+const subs = new Set();
+const tabbarH = () => document.getElementById('tabbar')?.offsetHeight || 0;
+// The notch / status-bar height, measured once with a probe (CSS env() can't be read directly).
+const probe = Object.assign(document.createElement('div'), { style: 'position:fixed;top:0;height:env(safe-area-inset-top);visibility:hidden;pointer-events:none' });
+document.body.append(probe);
+function heights() {
+  const room = innerHeight - tabbarH();
+  const peek = Math.round(head.offsetHeight + search.offsetHeight + 14);
+  return { peek, half: Math.max(peek + 120, Math.round(room * 0.5)), full: Math.round(room - 10 - probe.offsetHeight) };
 }
-/** Get the drawer out of the way (phones only), e.g. while drawing on the map. */
+function applySheet(px) {
+  panel.style.setProperty('--sheet-h', `${px}px`);
+  app.style.setProperty('--sheet-now', `${px}px`);
+}
+/** Snap the phone sheet to 'peek', 'half' or 'full'. */
+export function setSheet(s) {
+  sheet = s;
+  if (!phone.matches) return;
+  const h = heights();
+  applySheet(h[s]);
+  app.style.setProperty('--sheet-peek', `${h.peek}px`);
+  panel.dataset.sheet = s;
+  panel.classList.toggle('drawer-closed', s === 'peek');
+  if (s === 'peek') panel.querySelector('.scroll').scrollTop = 0;
+  syncToggle();
+  subs.forEach((fn) => fn(s));
+}
+export const getSheet = () => sheet;
+export const onSheet = (fn) => subs.add(fn);
+
+/** Open (half) or close (peek) the panel; on desktop this is a no-op. */
+export function setDrawer(open) {
+  if (phone.matches) setSheet(open ? (sheet === 'peek' ? 'half' : sheet) : 'peek');
+}
+/** Get the sheet out of the way (phones only), e.g. while drawing on the map or reading News. */
 export function peekPanel() {
-  if (!phone.matches || !drawerOpen) return;
-  beforePeek = true;
-  setDrawer(false);
+  if (!phone.matches || sheet === 'peek') return;
+  beforePeek = sheet;
+  setSheet('peek');
 }
 export function restorePanel() {
-  if (beforePeek) setDrawer(true);
+  if (beforePeek && phone.matches) setSheet(beforePeek);
   beforePeek = null;
 }
-/** Using the map (tap, drag, popup) closes the drawer on phones, like a native side menu. */
+/** Using the map (tap, drag, popup) lowers the sheet on phones, like Google Maps. */
 export function makeRoomForMap() {
-  if (!phone.matches || !drawerOpen) return;
+  if (!phone.matches || sheet === 'peek') return;
   beforePeek = null;
-  setDrawer(false);
+  setSheet('peek');
 }
 
 function syncToggle() {
-  const shut = phone.matches ? !drawerOpen : panel.classList.contains('collapsed');
+  const shut = phone.matches ? sheet === 'peek' : panel.classList.contains('collapsed');
   panel.classList.toggle('shut', shut);
-  toggleBtn.setAttribute('aria-label', phone.matches ? 'Close panel' : shut ? 'Expand panel' : 'Collapse panel');
-  toggleBtn.title = phone.matches ? 'Close' : shut ? 'Expand' : 'Collapse';
+  toggleBtn.setAttribute('aria-label', shut ? 'Expand panel' : 'Collapse panel');
+  toggleBtn.title = shut ? 'Expand' : 'Collapse';
 }
 toggleBtn.addEventListener('click', () => {
-  if (phone.matches) setDrawer(false);
+  if (phone.matches) setSheet(sheet === 'peek' ? 'half' : 'peek');
   else setCollapsed(!panel.classList.contains('collapsed'));
 });
-pill.addEventListener('click', () => setDrawer(true));
+// Tapping the search field brings the whole sheet up, so results show above the keyboard.
+search.querySelector('input').addEventListener('focus', () => { if (phone.matches) setSheet('full'); });
 
-// Swiping the drawer to the left closes it; it follows the finger and snaps open or shut.
-function dragDrawer(dx) {
-  panel.style.setProperty('--drawer-x', `${Math.min(0, dx)}px`);
+// Dragging the sheet: follows the finger, then snaps to the nearest height (or the next one on a flick).
+let drag = null;
+function startDrag(y) {
+  drag = { y, h: panel.offsetHeight, last: y, t: performance.now(), v: 0 };
+  panel.classList.add('dragging');
 }
-function releaseDrawer(dx, v) {
+function moveDrag(y) {
+  const now = performance.now();
+  if (now > drag.t) drag.v = (y - drag.last) / (now - drag.t);
+  drag.last = y; drag.t = now;
+  const h = heights();
+  applySheet(clamp(drag.h - (y - drag.y), h.peek, h.full));
+}
+function endDrag() {
   panel.classList.remove('dragging');
-  setDrawer(!(dx < -panel.offsetWidth / 3 || v < -0.4));
+  const h = heights(), cur = panel.offsetHeight;
+  let i = ORDER.indexOf(ORDER.reduce((a, b) => (Math.abs(h[b] - cur) < Math.abs(h[a] - cur) ? b : a)));
+  if (drag.v < -0.45) i = Math.min(2, ORDER.indexOf(ORDER.find((s) => h[s] > drag.h + 10) || 'full'));
+  else if (drag.v > 0.45) i = Math.max(0, ORDER.indexOf([...ORDER].reverse().find((s) => h[s] < drag.h - 10) || 'peek'));
+  drag = null;
+  beforePeek = null;
+  setSheet(ORDER[i]);
 }
 
 // ---------------- Dragging the header ----------------
 head.addEventListener('pointerdown', (e) => {
   if (e.button !== 0 || e.target.closest('button, a, input, select')) return;
   const start = { x: e.clientX, y: e.clientY, px: panel.offsetLeft, py: panel.offsetTop };
-  let moved = false, last = { x: e.clientX, t: e.timeStamp }, v = 0;
+  let moved = false;
   head.setPointerCapture(e.pointerId);
   const move = (ev) => {
     const dx = ev.clientX - start.x, dy = ev.clientY - start.y;
     if (!moved && Math.hypot(dx, dy) < 5) return;
-    if (!moved) { moved = true; panel.classList.add('dragging'); }
-    if (phone.matches) {
-      const dt = ev.timeStamp - last.t;
-      if (dt > 0) v = (ev.clientX - last.x) / dt;
-      last = { x: ev.clientX, t: ev.timeStamp };
-      dragDrawer(dx);
-    } else {
+    if (!moved) {
+      moved = true;
+      if (phone.matches) startDrag(start.y); else panel.classList.add('dragging');
+    }
+    if (phone.matches) moveDrag(ev.clientY);
+    else {
       pos = { x: start.px + dx, y: start.py + dy };
       place();
     }
   };
-  const up = (ev) => {
+  const up = () => {
     head.removeEventListener('pointermove', move);
     head.removeEventListener('pointerup', up);
     head.removeEventListener('pointercancel', up);
-    if (!moved) return;
-    if (phone.matches) releaseDrawer(ev.clientX - start.x, v);
+    if (!moved) {
+      // A tap on the header opens or lowers the sheet.
+      if (phone.matches) setSheet(sheet === 'peek' ? 'half' : 'peek');
+      return;
+    }
+    if (phone.matches) endDrag();
     else {
       panel.classList.remove('dragging');
       store.set('pos', pos = { x: panel.offsetLeft, y: panel.offsetTop });
@@ -144,35 +192,30 @@ head.addEventListener('pointerdown', (e) => {
   head.addEventListener('pointerup', up);
   head.addEventListener('pointercancel', up);
 });
-// A clearly sideways swipe anywhere on the drawer's content works too; vertical moves still scroll it.
+
+// The content drags the sheet too: up until it is full, and down once scrolled to the top.
 const scroller = panel.querySelector('.scroll');
-let swipe = null;
+let touch = null;
 scroller.addEventListener('touchstart', (e) => {
-  if (!phone.matches || e.touches.length !== 1 || e.target.closest('input[type=range], select')) return;
-  swipe = { x: e.touches[0].clientX, y: e.touches[0].clientY, active: false, v: 0, last: e.touches[0].clientX, t: e.timeStamp };
+  if (!phone.matches || e.touches.length !== 1 || e.target.closest('input[type=range], select, textarea')) return;
+  touch = { y: e.touches[0].clientY, x: e.touches[0].clientX, active: false };
 }, { passive: true });
 scroller.addEventListener('touchmove', (e) => {
-  if (!swipe) return;
+  if (!touch) return;
   const { clientX: x, clientY: y } = e.touches[0];
-  const dx = x - swipe.x, dy = y - swipe.y;
-  if (!swipe.active) {
-    if (Math.hypot(dx, dy) < 8) return;
-    if (dx > -8 || Math.abs(dx) < Math.abs(dy) * 1.5) { swipe = null; return; }
-    swipe.active = true;
-    panel.classList.add('dragging');
+  const dy = y - touch.y, dx = x - touch.x;
+  if (!touch.active) {
+    if (Math.abs(dy) < 8 || Math.abs(dx) > Math.abs(dy)) return;
+    const up = dy < 0;
+    if ((up && sheet !== 'full') || (!up && scroller.scrollTop <= 0)) { touch.active = true; startDrag(touch.y); }
+    else { touch = null; return; }
   }
   e.preventDefault();
-  const dt = e.timeStamp - swipe.t;
-  if (dt > 0) swipe.v = (x - swipe.last) / dt;
-  swipe.last = x; swipe.t = e.timeStamp;
-  dragDrawer(dx);
+  moveDrag(y);
 }, { passive: false });
-const endSwipe = () => {
-  if (swipe?.active) releaseDrawer(swipe.last - swipe.x, swipe.v);
-  swipe = null;
-};
-scroller.addEventListener('touchend', endSwipe);
-scroller.addEventListener('touchcancel', endSwipe);
+const endTouch = () => { if (touch?.active) endDrag(); touch = null; };
+scroller.addEventListener('touchend', endTouch);
+scroller.addEventListener('touchcancel', endTouch);
 
 // Double-click the header to put the card back in its corner.
 head.addEventListener('dblclick', (e) => {
@@ -184,9 +227,14 @@ head.addEventListener('dblclick', (e) => {
 
 function layout() {
   place();
+  if (phone.matches) setSheet(sheet);
+  else { panel.style.removeProperty('--sheet-h'); delete panel.dataset.sheet; panel.classList.remove('drawer-closed'); }
   syncToggle();
 }
 addEventListener('resize', layout);
 phone.addEventListener('change', layout);
 if (store.get('collapsed')) panel.classList.add('collapsed');
+// Fonts and the tab bar settle a moment after load, so measure the heights again then.
+requestAnimationFrame(layout);
+addEventListener('load', layout);
 layout();

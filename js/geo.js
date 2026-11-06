@@ -81,6 +81,9 @@ export function crsTransforms(epsg) {
       name: 'EPSG:3857 (Web Mercator)',
     };
   }
+  // NAD83 UTM (USGS LiDAR) and ETRS89 UTM (European data) sit within about a metre of WGS84 UTM.
+  if (epsg >= 26901 && epsg <= 26923) epsg += 32600 - 26900;
+  if (epsg >= 25828 && epsg <= 25838) epsg += 32600 - 25800;
   if ((epsg > 32600 && epsg <= 32660) || (epsg > 32700 && epsg <= 32760)) {
     const south = epsg > 32700;
     const zone = epsg - (south ? 32700 : 32600);

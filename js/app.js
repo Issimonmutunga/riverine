@@ -1,10 +1,10 @@
 // Flood Depth UI: map, area selection, worker orchestration, exposure and exports.
 import * as G from './geo.js';
-import { foldStep, peekPanel, restorePanel, makeRoomForMap } from './panel.js';
+import { foldStep, peekPanel, restorePanel, makeRoomForMap, setSheet, getSheet, onSheet } from './panel.js';
 import { coach, coachBusy, restartCoach } from './coach.js';
 import { tipsMode, terrainOf, settlementOf, placeOf, renderTips, tipsHeader } from './tips.js';
 import { t, lang, languages, onLang, speak, stopSpeak, isSpeaking } from './i18n.js';
-import { setupRail, openTool, closeTools } from './rail.js';
+import { setupRail, openTool, closeTools, toggleTool, anyToolOpen } from './rail.js';
 import { initRoute } from './features/route.js';
 import { initOffline } from './features/offline.js';
 import { initShare } from './features/share.js';
@@ -13,6 +13,7 @@ import { initPast } from './features/past.js';
 import { initTimeline } from './features/timeline.js';
 import { initLanguage } from './features/language.js';
 import { initChecklist } from './features/checklist.js';
+import { initDataHub } from './datahub.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -252,6 +253,7 @@ function setAOI(bounds) {
   describeAOI();
   showConditionsAt(bounds.getCenter());
   coach('run');
+  emit('area');
 }
 
 function describeAOI() {
@@ -340,9 +342,21 @@ $('#fileDem').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (!file) return;
   try {
-    toast(`Reading ${file.name}…`, false, 0);
+    await loadDemBuffer(await file.arrayBuffer(), file.name);
+  } catch (err) {
+    toast(err.message, true, 8000);
+  }
+});
+
+/**
+ * Use a GeoTIFF DEM (uploaded, downloaded from OpenTopography or opened from a shared link) as the
+ * elevation source: its footprint becomes the analysis area.
+ */
+async function loadDemBuffer(buffer, name) {
+  try {
+    toast(`Reading ${name}…`, false, 0);
     const GeoTIFF = await import('https://cdn.jsdelivr.net/npm/geotiff@2.1.3/+esm');
-    const tiff = await GeoTIFF.fromArrayBuffer(await file.arrayBuffer());
+    const tiff = await GeoTIFF.fromArrayBuffer(buffer);
     const img = await tiff.getImage();
     const width = img.getWidth(), height = img.getHeight();
     if (width * height > 80e6) throw new Error('DEM is larger than 80 million pixels — clip it first.');
@@ -354,17 +368,21 @@ $('#fileDem').addEventListener('change', async (e) => {
     const data = band instanceof Float32Array ? band : Float32Array.from(band);
     const bbox = img.getBoundingBox();
     const nd = img.getGDALNoData();
-    state.upload = { name: file.name, data, width, height, bbox, epsg, nodata: nd ?? -32768 };
+    $('input[name=dem][value=upload]').checked = true;
+    $('#uploadBox').hidden = false;
+    $('#detailField').style.opacity = 0.45;
+    $('#detail').disabled = true;
+    state.upload = { name, data, width, height, bbox, epsg, nodata: nd ?? -32768 };
     const corners = [[bbox[0], bbox[1]], [bbox[2], bbox[3]], [bbox[0], bbox[3]], [bbox[2], bbox[1]]].map(([x, y]) => T.inv(x, y));
     const b = L.latLngBounds(corners);
     setAOI(b);
     fitArea(b);
-    toast(`Loaded ${file.name} · ${width}×${height} px · ${T.name}`);
+    toast(`Loaded ${name} · ${width}×${height} px · ${T.name}`);
   } catch (err) {
     state.upload = null;
-    toast(err.message, true, 8000);
+    throw err;
   }
-});
+}
 
 // ---------------- Terrain analysis ----------------
 $('#btnRun').addEventListener('click', runAnalysis);
@@ -1572,9 +1590,11 @@ const features = {};
 const ctx = {
   map, state, call, toast, esc, fmt, fmtInt, me, bus,
   startLocate, hotlines, overpass, areaInfo, dangerDepth, scenarioParams,
-  cond: () => cond.data, areaName: () => $('#searchInput').value.trim() || cond.data?.place?.name || '',
+  cond: () => cond.data,
+  areaName: () => $('#searchInput').value.trim() || ($('#preset').value ? $('#preset').selectedOptions[0].text.split(/[,—(]/)[0].trim() : '') || cond.data?.place?.name || '',
   isPhone: () => phoneMq.matches, scenarioGen: () => scenarioGen,
   uiSettings, applyUiSettings, openArea, useScenario, getScriptUrl,
+  setDemSource, loadDemBuffer, loadShapes, reachesGeoJSON, exposureCSV, download,
 };
 
 // ---------------- Your shapes (shapefile / GeoJSON) ----------------
@@ -1884,10 +1904,15 @@ $$('[data-export]').forEach((b) => b.addEventListener('click', async () => {
 }));
 
 $('#expReaches').addEventListener('click', () => {
+  const fc = reachesGeoJSON();
+  if (fc) download('flood_depth_reaches.geojson', JSON.stringify(fc), 'application/geo+json');
+});
+/** Stream reaches with rating curves and the current scenario, as GeoJSON. */
+function reachesGeoJSON() {
   const a = state.analysis, sc = state.scenario;
-  if (!a) return;
+  if (!a) return null;
   const n = sc?.params.n ?? +$('#manning').value;
-  const fc = {
+  return {
     type: 'FeatureCollection',
     metadata: { generator: 'Flood Depth', manning_n: n, stages_m: a.stages, scenario: sc ? { mode: sc.mode, ...sc.params } : null },
     features: a.reaches.map((r) => ({
@@ -1900,16 +1925,21 @@ $('#expReaches').addEventListener('click', () => {
       },
     })),
   };
-  download('flood_depth_reaches.geojson', JSON.stringify(fc), 'application/geo+json');
-});
+}
 
 $('#expExposure').addEventListener('click', () => {
+  const csv = exposureCSV();
+  if (!csv) return toast('Find exposed buildings first.', 'notice');
+  download('flood_depth_exposure.csv', csv, 'text/csv');
+});
+/** Exposed buildings and facilities with their depth and chance of flooding, as CSV. */
+function exposureCSV() {
   const ex = state.exposure;
-  if (!ex) return toast('Find exposed buildings first.', 'notice');
+  if (!ex) return null;
   const rows = [['osm_id', 'kind', 'name', 'lat', 'lon', 'depth_m', 'probability']];
   for (const f of ex.feats) rows.push([f.id, f.kind, `"${(f.name || '').replace(/"/g, '""')}"`, f.lat.toFixed(6), f.lon.toFixed(6), f.depth.toFixed(2), f.prob.toFixed(3)]);
-  download('flood_depth_exposure.csv', rows.map((r) => r.join(',')).join('\n'), 'text/csv');
-});
+  return rows.map((r) => r.join(',')).join('\n');
+}
 
 $('#expShapes').addEventListener('click', () => {
   const sh = state.shapes;
@@ -2048,6 +2078,7 @@ function initSheetsConfig() {
     const url = urlIn.value.trim();
     if (!url) {
       setScriptUrl('');
+      emit('sheet');
       status.textContent = 'Disconnected.';
       status.className = 'hint sheets-status';
       btn.classList.remove('sheets-linked');
@@ -2059,6 +2090,7 @@ function initSheetsConfig() {
     try {
       await testScriptUrl(url);
       setScriptUrl(url);
+      emit('sheet');
       status.textContent = 'Connected \u2713 — new saves will appear in your Sheet.';
       status.className = 'hint sheets-status ok';
       btn.classList.add('sheets-linked');
@@ -2133,7 +2165,8 @@ updateSaveButton();
 setupRail({
   toast,
   // The tools share the right-hand column with News, Tips and Layers: one pane at a time.
-  onOpen() { toggleNews(false); toggleTips(false); toggleLayers(false); },
+  onOpen() { toggleNews(false); toggleTips(false); toggleLayers(false); peekPanel(); },
+  onClose() { restorePanel(); },
 });
 features.route = initRoute(ctx); // Route, then Shelters
 ctx.routeApi = features.route;
@@ -2147,3 +2180,62 @@ initPast(ctx);
 initTimeline(ctx);
 initLanguage();
 initChecklist(ctx);
+
+// Data in and out, in the main panel: sharper DEMs, survey requests, sharing and the dataset catalogue.
+initDataHub(ctx);
+
+// ---------------- Phones: the tab bar ----------------
+// Five destinations in thumb reach: the flood map (the panel sheet), News, tips, Share and more.
+// Each tab drives the same panes as the desktop buttons, and shows which one is open.
+const tabbar = $('#tabbar');
+const tab = (id) => tabbar.querySelector(`[data-tab=${id}]`);
+function closePanes() { toggleNews(false); toggleTips(false); toggleLayers(false); closeTools(); }
+tabbar.addEventListener('click', (e) => {
+  const id = e.target.closest('[data-tab]')?.dataset.tab;
+  if (!id) return;
+  // The tab bar is the panes' own control, so its taps must not count as "a tap outside" that closes them.
+  e.stopPropagation();
+  const shareOpen = !$('#pane-share').hidden;
+  if (id === 'map') {
+    const paneOpen = !newsPop.hidden || !tipsPop.hidden || anyToolOpen() || !$('#toolTray').hidden;
+    closePanes();
+    setSheet(paneOpen || getSheet() === 'peek' ? 'half' : 'peek');
+  } else if (id === 'news') toggleNews();
+  else if (id === 'tips') toggleTips();
+  else if (id === 'share') toggleTool('share');
+  else if (id === 'more') {
+    if (shareOpen) closeTools();
+    $('#btnMore').click();
+  }
+});
+let tabsQueued = false;
+function syncTabs() {
+  if (tabsQueued) return;
+  tabsQueued = true;
+  setTimeout(() => {
+    tabsQueued = false;
+    const shareOpen = !$('#pane-share').hidden;
+    const current = !newsPop.hidden ? 'news' : !tipsPop.hidden ? 'tips' : shareOpen ? 'share'
+      : (!$('#toolTray').hidden || anyToolOpen()) ? 'more' : getSheet() !== 'peek' ? 'map' : null;
+    for (const b of tabbar.querySelectorAll('[data-tab]')) b.setAttribute('aria-current', b.dataset.tab === current ? 'page' : 'false');
+    // Mirrors of the desktop buttons' states: unread news, the tips warning colours, share in danger.
+    const n = $('#newsCount');
+    tab('news').querySelector('.tab-n').hidden = n.hidden;
+    tab('news').querySelector('.tab-n').textContent = n.textContent;
+    tab('tips').classList.toggle('danger', tipsBtn.classList.contains('danger'));
+    tab('tips').classList.toggle('ready', tipsBtn.classList.contains('ready'));
+    const shareState = $('.tool-share .rail-btn')?.dataset.state;
+    tab('share').classList.toggle('danger', shareState === 'danger' && !tipsBtn.classList.contains('danger'));
+    const moreState = $('#btnMore').dataset.state;
+    const dot = tab('more').querySelector('.tab-dot');
+    dot.hidden = !moreState || moreState === 'danger';
+    dot.classList.toggle('danger', moreState === 'danger');
+  }, 0);
+}
+const tabWatch = new MutationObserver(syncTabs);
+for (const el of [newsPop, tipsPop, $('#toolTray'), tipsBtn, $('#newsCount'), $('#btnMore'), ...$$('.side-pop'), ...$$('.tool-tray .rail-btn')]) {
+  tabWatch.observe(el, { attributes: true, attributeFilter: ['hidden', 'class', 'data-state'], childList: el.id === 'newsCount' });
+}
+onSheet(syncTabs);
+syncTabs();
+

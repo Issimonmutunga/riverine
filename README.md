@@ -25,6 +25,16 @@ node server.js
 
 Then open http://localhost:8080. Any static web server also works (`python -m http.server 8080`).
 
+### Optional: a team Google Sheet
+
+One Google Sheet can hold saved places and flood marks, a **shared catalogue of dataset links** (DEMs, flood maps, shapefiles) and **elevation survey requests**.
+
+1. Create a Sheet, open **Extensions → Apps Script**, paste [`apps-script/Code.gs`](apps-script/Code.gs) and save.
+2. **Deploy → New deployment → Web app**, execute as *Me*, access *Anyone*. Copy the `/exec` link.
+3. Either paste it in the app (bookmark → gear), so everyone who pastes the same link shares one catalogue, or put it in [`js/config.js`](js/config.js) (`sheetUrl`) so every visitor of your copy uses it. `requestEmail` there is where survey requests go when no Sheet is set.
+
+Sharper elevation data comes from OpenTopography (Copernicus GLO-30, NASADEM, ALOS, EU DTM, USGS 10 m and 1 m LiDAR). Each person pastes their own free [API key](https://portal.opentopography.org/requestService?service=api); it stays on their device.
+
 ## Workflow
 
 1. **Area & terrain**: draw a box, use the map view, pick an example site, or upload your own GeoTIFF DEM. *Run terrain analysis* conditions the DEM, routes flow, extracts streams, computes HAND and builds a synthetic rating curve for every reach (typically 1–3 s).

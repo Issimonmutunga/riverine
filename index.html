@@ -11,7 +11,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
-  <link rel="stylesheet" href="css/style.css?v=20261106d">
+  <link rel="stylesheet" href="css/style.css?v=20261106e">
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -138,6 +138,8 @@
                     <option value="11">Coarse (~75 m)</option>
                     <option value="12" selected>Standard (~38 m)</option>
                     <option value="13">Fine (~19 m)</option>
+                    <option value="14">High (~10 m)</option>
+                    <option value="15">Very high (~5 m)</option>
                   </select>
                 </label>
                 <label class="field">
@@ -149,6 +151,46 @@
               <label class="field"><span>Water surface at or below (m)</span><input type="number" id="waterLevel" value="0" step="0.1"></label>
               <p class="hint">0 m masks the sea. For a lake, enter its surface elevation so it acts as the base level instead of floodplain.</p>
               <label class="toggle"><span>Burn OpenStreetMap rivers into the DEM</span><input type="checkbox" class="switch" id="burn" checked></label>
+            </div>
+          </details>
+
+          <details class="more" id="sharpDem">
+            <summary>Sharper elevation data</summary>
+            <div class="more-body">
+              <p class="hint">The free global tiles are about 30 m underneath. Finer, bare-earth elevation maps floods far better.</p>
+              <div class="dem-opt">
+                <h4>Finer free tiles</h4>
+                <p class="hint">Real ~10 m or ~5 m data where it exists (USA, much of Europe, Australia, New Zealand, Mexico…). Elsewhere it is the same data, sampled more finely.</p>
+                <div class="btn-row"><button class="chip" type="button" data-detail="14">Use ~10 m</button><button class="chip" type="button" data-detail="15">Use ~5 m</button></div>
+              </div>
+              <div class="dem-opt">
+                <h4>Download from OpenTopography</h4>
+                <label class="field"><span>Dataset</span><select id="otDataset"></select></label>
+                <label class="field"><span>API key <a href="https://portal.opentopography.org/requestService?service=api" target="_blank" rel="noopener">Get a free key ↗</a></span>
+                  <input type="text" id="otKey" autocomplete="off" spellcheck="false" placeholder="Paste your key"></label>
+                <button class="secondary" type="button" id="btnOT">Download for this area</button>
+                <p class="hint" id="otStatus">Downloads straight into the app for the area you chose. The key stays on this device.</p>
+              </div>
+              <div class="dem-opt">
+                <h4>Need survey-grade data?</h4>
+                <p class="hint">Ask for a LiDAR or drone survey of this area.</p>
+                <button class="chip" type="button" id="btnReq">Request a survey</button>
+                <form id="reqForm" class="req-form" hidden>
+                  <label class="field"><span>Your name</span><input type="text" id="reqName" required maxlength="80" autocomplete="name"></label>
+                  <label class="field"><span>Phone or email</span><input type="text" id="reqContact" required maxlength="120" autocomplete="email"></label>
+                  <label class="field"><span>Organisation <span class="opt">(optional)</span></span><input type="text" id="reqOrg" maxlength="120" autocomplete="organization"></label>
+                  <label class="field"><span>Detail needed</span>
+                    <select id="reqRes">
+                      <option>Drone survey (under 0.5 m)</option>
+                      <option selected>LiDAR (about 1 m)</option>
+                      <option>5 to 10 m</option>
+                      <option>Not sure</option>
+                    </select></label>
+                  <label class="field"><span>What it is for</span><textarea id="reqPurpose" rows="3" maxlength="600" placeholder="e.g. planning evacuation routes for 3 villages on the Nzoia"></textarea></label>
+                  <button class="secondary" type="submit">Send request</button>
+                </form>
+                <p class="hint" id="reqStatus"></p>
+              </div>
             </div>
           </details>
 
@@ -280,6 +322,34 @@
         </div>
       </section>
 
+      <!-- 5. Share & find data -->
+      <section class="step folded" id="stepShare">
+        <h2><span class="num"><svg><use href="#i-shout"/></svg></span> Share &amp; find data</h2>
+        <div class="body">
+          <h3 class="sub">Share this analysis</h3>
+          <p class="hint">DEM, flood depth and probability (GeoTIFF), river reaches (GeoJSON), exposure (CSV) and a short README, as one zip for WhatsApp, email or a shared drive.</p>
+          <button class="secondary" type="button" id="btnSharePack" disabled>Share results</button>
+          <p class="hint" id="packStatus"></p>
+          <h3 class="sub">Datasets for this area</h3>
+          <p class="hint" id="catHint"></p>
+          <ul class="facilities catalogue" id="catList"></ul>
+          <button class="chip" type="button" id="btnAddData">Add a dataset link</button>
+          <form id="dataForm" class="req-form" hidden>
+            <label class="field"><span>Title</span><input type="text" id="dataTitle" required maxlength="120" placeholder="e.g. Budalangi LiDAR 2023"></label>
+            <label class="field"><span>Link</span><input type="url" id="dataUrl" required placeholder="https://…"></label>
+            <div class="grid2">
+              <label class="field"><span>Type</span><select id="dataKind"></select></label>
+              <label class="field"><span>Resolution</span><input type="text" id="dataRes" maxlength="30" placeholder="e.g. 1 m"></label>
+            </div>
+            <div class="grid2">
+              <label class="field"><span>Licence</span><input type="text" id="dataLicence" maxlength="60" placeholder="e.g. CC BY 4.0"></label>
+              <label class="field"><span>Shared by</span><input type="text" id="dataBy" maxlength="60"></label>
+            </div>
+            <button class="secondary" type="submit">Share link</button>
+          </form>
+        </div>
+      </section>
+
       <footer class="credits">
         Made by <a href="https://simonmapper.co.ke" target="_blank" rel="author noopener">Simon Maps</a>.
         Screening tool — not a substitute for hydraulic modelling. Built on Leaflet, AWS Terrain Tiles, OpenStreetMap, Overpass, Nominatim, geotiff.js and EOX Sentinel-2 cloudless.
@@ -360,6 +430,15 @@
     </div>
   </div>
 
+  <!-- Phones: the main destinations, within thumb reach -->
+  <nav class="tabbar" id="tabbar" aria-label="Main">
+    <button class="tab" type="button" data-tab="map"><svg><use href="#i-wave"/></svg><span>Flood map</span></button>
+    <button class="tab" type="button" data-tab="news"><svg><use href="#i-news"/></svg><span>News</span><b class="tab-n" hidden></b></button>
+    <button class="tab" type="button" data-tab="tips" aria-label="Tips"><span class="word">tips</span></button>
+    <button class="tab tab-share" type="button" data-tab="share"><svg><use href="#i-shout"/></svg><span>Share</span></button>
+    <button class="tab" type="button" data-tab="more" aria-label="More tools"><span class="word">more</span><i class="tab-dot" hidden></i></button>
+  </nav>
+
   <div id="legend" class="legend" hidden></div>
   <div id="toast" class="toast" role="status" hidden></div>
 </div>
@@ -420,6 +499,22 @@
   </article>
 </dialog>
 
+<!-- How to connect a Google Sheet -->
+<dialog id="sheetsGuide">
+  <form method="dialog"><button class="icon close" aria-label="Close"><svg><use href="#i-close"/></svg></button></form>
+  <article>
+    <h2>Connect a Google Sheet</h2>
+    <p>One Sheet keeps your saved places and flood marks, and lets your team share dataset links and receive survey requests. Everyone who pastes the same link shares the same catalogue.</p>
+    <ol>
+      <li>Create a Google Sheet, then open <b>Extensions → Apps Script</b>.</li>
+      <li>Replace the code with <a href="https://github.com/Issimonmutunga/riverine/blob/main/apps-script/Code.gs" target="_blank" rel="noopener">this script ↗</a> and save.</li>
+      <li><b>Deploy → New deployment →</b> type <b>Web app</b>. Execute as <b>Me</b>, access <b>Anyone</b>. Deploy and allow access.</li>
+      <li>Copy the web-app link (it ends in <code>/exec</code>), paste it here and tap <b>Save</b>.</li>
+    </ol>
+    <p class="hint">Anyone with the link can add rows to the Sheet, so share it only with your team.</p>
+  </article>
+</dialog>
+
 <!-- Save place dialog -->
 <dialog id="savePlaceDialog">
   <form id="savePlaceForm" method="dialog">
@@ -445,6 +540,6 @@
 </dialog>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-<script type="module" src="js/app.js?v=20261106d"></script>
+<script type="module" src="js/app.js?v=20261106e"></script>
 </body>
 </html>

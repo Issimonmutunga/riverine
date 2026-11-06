@@ -1,14 +1,14 @@
 // Flood Depth service worker: keeps the app, the map pictures people have looked at, the terrain tiles of
 // analysed areas and the latest forecasts, so the app still works when mobile data drops during a flood.
 // Map tiles are only kept as they are viewed: OpenStreetMap's tile policy does not allow bulk downloads.
-const V = 'fd-2026-11-06d';
+const V = 'fd-2026-11-06e';
 const SHELL = `shell-${V}`, TILES = 'fd-tiles', DATA = 'fd-data';
 const MAX_TILES = 4000;
 
 const APP = [
   './', 'index.html', 'css/style.css', 'manifest.webmanifest', 'icon.svg',
   'js/app.js', 'js/geo.js', 'js/hydro.js', 'js/panel.js', 'js/coach.js', 'js/worker.js', 'js/places.js',
-  'js/tips.js', 'js/i18n.js', 'js/rail.js',
+  'js/tips.js', 'js/i18n.js', 'js/rail.js', 'js/datahub.js', 'js/zip.js', 'js/config.js',
   'js/features/route.js', 'js/features/offline.js', 'js/features/share.js', 'js/features/marks.js',
   'js/features/past.js', 'js/features/timeline.js', 'js/features/language.js', 'js/features/checklist.js',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
