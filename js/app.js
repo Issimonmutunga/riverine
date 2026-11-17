@@ -1,6 +1,6 @@
 // Flood Depth UI: map, area selection, worker orchestration, exposure and exports.
 import * as G from './geo.js';
-import { foldStep, peekPanel, restorePanel, makeRoomForMap, setSheet, getSheet, onSheet } from './panel.js';
+import { foldStep, peekPanel, restorePanel, makeRoomForMap, setSheet, getSheet, onSheet, togglePanel, panelOpen, onPanel } from './panel.js';
 import { coach, coachBusy, restartCoach } from './coach.js';
 import { tipsMode, terrainOf, settlementOf, placeOf, renderTips, tipsHeader } from './tips.js';
 import { t, lang, languages, onLang, speak, stopSpeak, isSpeaking } from './i18n.js';
@@ -55,9 +55,12 @@ $$('input[name=basemap]').forEach((r) => r.addEventListener('change', () => {
 // Layers popover
 const layersBtn = $('#btnLayers'), layersPop = $('#layersPop');
 function toggleLayers(open = layersPop.hidden) {
+  if (open === !layersPop.hidden) return;
   if (open) { toggleNews(false); toggleTips(false); closeTools(); }
   layersPop.hidden = !open;
   layersBtn.setAttribute('aria-expanded', open);
+  // On phones the layers card would sit on top of the sheet, so the sheet steps down while it is open.
+  if (open) peekPanel(); else restorePanel();
 }
 layersBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleLayers(); });
 document.addEventListener('click', (e) => { if (!layersPop.hidden && !e.target.closest('.mapctl')) toggleLayers(false); });
@@ -2196,7 +2199,10 @@ tabbar.addEventListener('click', (e) => {
   // The tab bar is the panes' own control, so its taps must not count as "a tap outside" that closes them.
   e.stopPropagation();
   const shareOpen = !$('#pane-share').hidden;
-  if (id === 'map') {
+  if (id === 'map' && !phoneMq.matches) {
+    // Desktop: "map" folds the panel into its horizontal tab and back; the right-hand panes are left alone.
+    togglePanel();
+  } else if (id === 'map') {
     const paneOpen = !newsPop.hidden || !tipsPop.hidden || anyToolOpen() || !$('#toolTray').hidden;
     closePanes();
     setSheet(paneOpen || getSheet() === 'peek' ? 'half' : 'peek');
@@ -2215,9 +2221,14 @@ function syncTabs() {
   setTimeout(() => {
     tabsQueued = false;
     const shareOpen = !$('#pane-share').hidden;
+    const wide = !phoneMq.matches;
     const current = !newsPop.hidden ? 'news' : !tipsPop.hidden ? 'tips' : shareOpen ? 'share'
-      : (!$('#toolTray').hidden || anyToolOpen()) ? 'more' : getSheet() !== 'peek' ? 'map' : null;
-    for (const b of tabbar.querySelectorAll('[data-tab]')) b.setAttribute('aria-current', b.dataset.tab === current ? 'page' : 'false');
+      : (!$('#toolTray').hidden || anyToolOpen()) ? 'more' : (!wide && getSheet() !== 'peek') ? 'map' : null;
+    for (const b of tabbar.querySelectorAll('[data-tab]')) {
+      // Desktop: the panel and a right-hand pane can both be open, so "map" shows its own state.
+      const on = b.dataset.tab === current || (wide && b.dataset.tab === 'map' && panelOpen());
+      b.setAttribute('aria-current', on ? 'page' : 'false');
+    }
     // Mirrors of the desktop buttons' states: unread news, the tips warning colours, share in danger.
     const n = $('#newsCount');
     tab('news').querySelector('.tab-n').hidden = n.hidden;
@@ -2237,5 +2248,6 @@ for (const el of [newsPop, tipsPop, $('#toolTray'), tipsBtn, $('#newsCount'), $(
   tabWatch.observe(el, { attributes: true, attributeFilter: ['hidden', 'class', 'data-state'], childList: el.id === 'newsCount' });
 }
 onSheet(syncTabs);
+onPanel(syncTabs);
 syncTabs();
 

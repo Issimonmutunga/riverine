@@ -70,7 +70,7 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 /* ---------- Floating panel ---------- */
 #panel {
   position: absolute; z-index: 800; top: var(--py, 12px); left: var(--px, 12px);
-  width: 372px; max-height: calc(100% - var(--py, 12px) - 12px);
+  width: 372px; max-width: calc(100% - 24px); max-height: calc(100% - var(--py, 12px) - 12px);
   display: flex; flex-direction: column;
   background: var(--surface-strong);
   -webkit-backdrop-filter: var(--blur);
@@ -90,6 +90,11 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 @media (min-width: 821px) {
   #panel.collapsed > .search, #panel.collapsed > .scroll { display: none; }
   #panel.collapsed .brand { padding-bottom: 14px; }
+  /* Folded: just a horizontal tab, so it never hides the map. Tap it anywhere to unfold. */
+  #panel.collapsed { width: auto; min-width: 0; }
+  #panel.collapsed .brand { cursor: pointer; gap: 10px; padding: 10px 12px 10px 16px; }
+  #panel.collapsed .brand .titles p, #panel.collapsed #btnSavePlace, #panel.collapsed #btnMethod { display: none; }
+  #panel.collapsed .brand h1 { white-space: nowrap; }
 }
 .scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 8px 16px; scrollbar-width: thin; }
 
@@ -154,7 +159,7 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 /* Folding animates the body's grid row between 1fr and 0fr. */
 .step .body { display: grid; grid-template-rows: 1fr; transition: grid-template-rows .3s var(--ease), opacity .25s; }
 .step .body > .inner { min-height: 0; overflow: hidden; padding: 0 4px; margin: 0 -4px; }
-.step.folded .body { grid-template-rows: 0fr; opacity: 0; }
+.step.folded .body { grid-template-rows: 0fr; opacity: 0; visibility: hidden; transition: grid-template-rows .3s var(--ease), opacity .25s, visibility 0s .3s; }
 .step.locked h2 { color: var(--muted); opacity: .7; margin: 0; cursor: default; }
 .step.locked h2 .fold { display: none; }
 .step.locked .num { background: var(--fill); color: var(--faint); }
@@ -482,7 +487,7 @@ dialog .close { position: sticky; top: 14px; float: right; margin: 14px 14px 0 0
   .tabs button { padding: 9px 4px; font-size: 14px; }
   .chip { padding: 9px 14px; font-size: 13px; }
   .toggle { min-height: 44px; font-size: 14.5px; }
-  .more summary { padding: 10px 0; font-size: 14px; }
+  .more summary { padding: 13px 0; font-size: 14px; }
   .actions button { padding: 14px 8px; font-size: 14px; }
   input[type=range] { height: 32px; }
   .facilities li { padding: 12px 8px; font-size: 14px; }
@@ -1221,6 +1226,26 @@ svg.inline { width: 14px; height: 14px; vertical-align: -2px; }
   .coach { top: calc(12px + env(safe-area-inset-top)); left: 12px; right: 68px; transform: none; width: auto; max-width: none; animation-name: drop-ph; }
   .coach.out { transform: translateY(-6px); }
   .coach-acts .phone-only { display: inline-flex; }
+  /* The coach shares the top edge with the layers card and the location alert, so it waits for them. */
+  #app:has(#layersPop:not([hidden]), #meAlert:not([hidden])) .coach { opacity: 0; pointer-events: none; }
+  .popover { max-height: calc(100dvh - var(--tabbar-h) - var(--sheet-peek) - 136px - env(safe-area-inset-top)); width: min(270px, calc(100vw - 24px)); }
+  #app:has(#layersPop:not([hidden])) .me-alert, #app:has(#layersPop:not([hidden])) #btnAlert { display: none; }
+
+  /* Finger-sized targets (44px) for the small controls in the sheet. */
+  .brand button.icon { width: 44px; height: 44px; }
+  .brand { gap: 6px; }
+  .step h2 { min-height: 44px; }
+  .step.locked h2 { min-height: 44px; }
+  .chip, .tabs button { min-height: 44px; }
+  .seg label { min-height: 44px; display: flex; align-items: center; }
+  .seg input[type=radio], .toggle input[type=checkbox]:not(.switch) { width: 20px; height: 20px; }
+  .btn-row { gap: 8px; }
+  .coach-x { width: 36px; height: 36px; top: 4px; right: 4px; }
+  .toast button.icon { width: 36px; height: 36px; }
+  .me-head button.icon { width: 36px; height: 36px; top: -8px; right: -10px; }
+  .legend { font-size: 12px; }
+  /* Landscape phones: a shorter tab bar and sheet so the map keeps some room. */
+  @media (max-height: 480px) { #app { --tabbar-h: calc(52px + env(safe-area-inset-bottom)); } .tab { height: 34px; } .tab .word { font-size: 14px; } }
   #app:has(.news-pop:not([hidden]), .tips-pop:not([hidden])) .coach { opacity: 0; pointer-events: none; }
   @keyframes drop-ph { from { opacity: 0; transform: translateY(-8px); } }
 }
@@ -1231,7 +1256,6 @@ svg.inline { width: 14px; height: 14px; vertical-align: -2px; }
    so nothing reaches the zoom buttons and scale bar at the bottom. */
 @media (min-width: 821px) {
   .tabbar { display: flex; position: absolute; z-index: 810; top: 12px; right: 12px; gap: 8px; }
-  .tab[data-tab=map] { display: none; }
   .tab {
     position: relative; height: 44px; min-width: 66px; padding: 0 16px; border-radius: 14px;
     display: grid; place-items: center;
@@ -1270,6 +1294,22 @@ svg.inline { width: 14px; height: 14px; vertical-align: -2px; }
   .tool-tray { transform-origin: calc(100% - 40px) -10px; }
   /* With the coach and the toolbar both along the top, the coach waits while a pane is open. */
   #app:has(.news-pop:not([hidden]), .tips-pop:not([hidden])) .coach { opacity: 0; pointer-events: none; }
+
+  /* Everything that floats over the map sits in the gap between the panel (left) and the controls (right),
+     wherever the panel is or however it is folded, so nothing lands on top of anything else. */
+  #app { --panel-r: 384px; --gap-l: calc(var(--panel-r) + 12px); --gap-r: 76px; }
+  .coach { left: var(--gap-l); right: auto; transform: none; animation-name: drop-ph;
+    max-width: clamp(220px, calc(100vw - var(--gap-l) - 380px), 400px); }
+  .coach.out { transform: translateY(-6px); }
+  @keyframes drop-ph { from { opacity: 0; transform: translateY(-8px); } }
+  .toast { left: calc(var(--gap-l) + (100vw - var(--gap-l) - var(--gap-r)) / 2); max-width: min(420px, calc(100vw - var(--gap-l) - var(--gap-r) - 8px)); }
+  .legend { max-width: calc(100vw - var(--gap-l) - var(--gap-r) - 8px); }
+}
+
+/* Not enough room beside the toolbar: the coach drops below it, and steps aside while Layers is open. */
+@media (min-width: 821px) and (max-width: 1060px) {
+  .coach { top: 68px; max-width: calc(100vw - var(--gap-l) - var(--gap-r)); }
+  #app:has(#layersPop:not([hidden])) .coach { opacity: 0; pointer-events: none; }
 }
 
 /* Step 1: the main action first, then the extras grouped underneath. */

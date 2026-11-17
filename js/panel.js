@@ -20,10 +20,21 @@ function syncStep(step) {
   h2.setAttribute('aria-expanded', !locked && !step.classList.contains('folded'));
   h2.setAttribute('aria-disabled', locked);
   h2.tabIndex = locked ? -1 : 0;
+  h2.title = locked ? 'Finish the step above first' : '';
+  step.querySelector('.body').inert = locked || step.classList.contains('folded');
 }
 export function foldStep(step, fold) {
   if (typeof step === 'string') step = document.querySelector(step);
   step.classList.toggle('folded', fold);
+}
+/** Open one step and fold the others, so the panel never grows into a long scroll. */
+function openOnly(step) {
+  for (const other of panel.querySelectorAll('.step')) {
+    if (other !== step && !other.classList.contains('locked')) foldStep(other, true);
+  }
+  foldStep(step, false);
+  // Once the fold animation has settled, bring the opened step to the top.
+  setTimeout(() => step.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 320);
 }
 for (const step of panel.querySelectorAll('.step')) {
   const h2 = step.querySelector('h2'), body = step.querySelector('.body');
@@ -35,7 +46,8 @@ for (const step of panel.querySelectorAll('.step')) {
   h2.setAttribute('role', 'button');
   h2.insertAdjacentHTML('beforeend', '<svg class="fold" aria-hidden="true"><use href="#i-chev"/></svg>');
   h2.addEventListener('click', () => {
-    if (!step.classList.contains('locked')) foldStep(step, !step.classList.contains('folded'));
+    if (step.classList.contains('locked')) return;
+    if (step.classList.contains('folded')) openOnly(step); else foldStep(step, true);
   });
   h2.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); h2.click(); }
@@ -61,7 +73,23 @@ function setCollapsed(on) {
   panel.classList.toggle('collapsed', on);
   store.set('collapsed', on);
   syncToggle();
+  place();
+  publish();
 }
+/** Fold the panel into its horizontal tab (desktop) or lower the sheet (phones); one call flips it. */
+export function togglePanel() {
+  if (phone.matches) setSheet(sheet === 'peek' ? 'half' : 'peek');
+  else setCollapsed(!panel.classList.contains('collapsed'));
+}
+export const panelOpen = () => (phone.matches ? sheet !== 'peek' : !panel.classList.contains('collapsed'));
+/** Tell the rest of the page where the panel ends, so the coach, toasts and legend stay clear of it. */
+function publish() {
+  const r = phone.matches ? 0 : panel.offsetLeft + panel.offsetWidth;
+  app.style.setProperty('--panel-r', `${r}px`);
+  panelSubs.forEach((fn) => fn());
+}
+const panelSubs = new Set();
+export const onPanel = (fn) => panelSubs.add(fn);
 
 // ---------------- Phone: a bottom sheet with three heights ----------------
 const ORDER = ['peek', 'half', 'full'];
@@ -80,8 +108,13 @@ function applySheet(px) {
   panel.style.setProperty('--sheet-h', `${px}px`);
   app.style.setProperty('--sheet-now', `${px}px`);
 }
-/** Snap the phone sheet to 'peek', 'half' or 'full'. */
+/** Snap the phone sheet to 'peek', 'half' or 'full'. An explicit choice wins over any queued peek/restore. */
 export function setSheet(s) {
+  pending = null;
+  beforePeek = null;
+  applyStateSheet(s);
+}
+function applyStateSheet(s) {
   sheet = s;
   if (!phone.matches) return;
   const h = heights();
@@ -91,6 +124,7 @@ export function setSheet(s) {
   panel.classList.toggle('drawer-closed', s === 'peek');
   if (s === 'peek') panel.querySelector('.scroll').scrollTop = 0;
   syncToggle();
+  publish();
   subs.forEach((fn) => fn(s));
 }
 export const getSheet = () => sheet;
@@ -101,19 +135,32 @@ export function setDrawer(open) {
   if (phone.matches) setSheet(open ? (sheet === 'peek' ? 'half' : sheet) : 'peek');
 }
 /** Get the sheet out of the way (phones only), e.g. while drawing on the map or reading News. */
+// Panes open and close in quick succession (news closes as tips opens). Both calls are queued and only
+// the last one runs, so rapid clicking can never leave the sheet half-way or flicker between heights.
+let pending = null, queued = false;
+function later(fn) {
+  pending = fn;
+  if (queued) return;
+  queued = true;
+  queueMicrotask(() => { queued = false; const f = pending; pending = null; f?.(); });
+}
 export function peekPanel() {
-  if (!phone.matches || sheet === 'peek') return;
-  beforePeek = sheet;
-  setSheet('peek');
+  later(() => {
+    if (!phone.matches || sheet === 'peek') return;
+    beforePeek = sheet;
+    applyStateSheet('peek');
+  });
 }
 export function restorePanel() {
-  if (beforePeek && phone.matches) setSheet(beforePeek);
-  beforePeek = null;
+  later(() => {
+    const back = beforePeek;
+    beforePeek = null;
+    if (back && phone.matches) applyStateSheet(back);
+  });
 }
 /** Using the map (tap, drag, popup) lowers the sheet on phones, like Google Maps. */
 export function makeRoomForMap() {
   if (!phone.matches || sheet === 'peek') return;
-  beforePeek = null;
   setSheet('peek');
 }
 
@@ -123,10 +170,7 @@ function syncToggle() {
   toggleBtn.setAttribute('aria-label', shut ? 'Expand panel' : 'Collapse panel');
   toggleBtn.title = shut ? 'Expand' : 'Collapse';
 }
-toggleBtn.addEventListener('click', () => {
-  if (phone.matches) setSheet(sheet === 'peek' ? 'half' : 'peek');
-  else setCollapsed(!panel.classList.contains('collapsed'));
-});
+toggleBtn.addEventListener('click', togglePanel);
 // Tapping the search field brings the whole sheet up, so results show above the keyboard.
 search.querySelector('input').addEventListener('focus', () => { if (phone.matches) setSheet('full'); });
 
@@ -171,6 +215,7 @@ head.addEventListener('pointerdown', (e) => {
     else {
       pos = { x: start.px + dx, y: start.py + dy };
       place();
+      publish();
     }
   };
   const up = () => {
@@ -180,6 +225,7 @@ head.addEventListener('pointerdown', (e) => {
     if (!moved) {
       // A tap on the header opens or lowers the sheet.
       if (phone.matches) setSheet(sheet === 'peek' ? 'half' : 'peek');
+      else if (panel.classList.contains('collapsed')) setCollapsed(false);
       return;
     }
     if (phone.matches) endDrag();
@@ -227,9 +273,10 @@ head.addEventListener('dblclick', (e) => {
 
 function layout() {
   place();
-  if (phone.matches) setSheet(sheet);
+  if (phone.matches) applyStateSheet(sheet);
   else { panel.style.removeProperty('--sheet-h'); delete panel.dataset.sheet; panel.classList.remove('drawer-closed'); }
   syncToggle();
+  publish();
 }
 addEventListener('resize', layout);
 phone.addEventListener('change', layout);
