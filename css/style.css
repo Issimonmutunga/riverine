@@ -496,6 +496,11 @@ dialog .close { position: sticky; top: 14px; float: right; margin: 14px 14px 0 0
   /* The drawer's own list shouldn't bounce the page. */
   .scroll { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 }
+.attr-close { display: none !important; }
+@media (max-width: 820px) { .leaflet-control-attribution.compact.open .attr-close {
+  display: inline-grid; place-items: center; width: 28px; height: 28px; margin: -4px 6px -4px -6px; padding: 0;
+  border-radius: 50%; background: var(--fill); color: var(--ink); font-size: 18px; line-height: 1; vertical-align: middle;
+} .leaflet-control-attribution.compact.open .attr-close { display: inline-grid !important; } }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 
 /* ---------- Your shapes upload ---------- */

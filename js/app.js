@@ -69,9 +69,21 @@ L.DomEvent.disableClickPropagation($('.mapctl'));
 L.DomEvent.disableScrollPropagation(layersPop);
 
 map.attributionControl.getContainer().classList.add('compact');
-map.attributionControl.getContainer().addEventListener('click', (e) => {
-  if (!e.target.closest('a')) e.currentTarget.classList.toggle('open');
-});
+{
+  // Collapsed: a tap opens it. Open: links work as links, and a real close button folds it again.
+  const box = map.attributionControl.getContainer();
+  const close = Object.assign(document.createElement('button'), { type: 'button', className: 'attr-close', textContent: '×', title: 'Hide credits' });
+  close.setAttribute('aria-label', 'Hide credits');
+  // Leaflet rewrites the credits' HTML whenever a source is added, so keep the button in place.
+  const keep = () => { if (box.firstChild !== close) box.prepend(close); };
+  keep();
+  new MutationObserver(keep).observe(box, { childList: true });
+  box.addEventListener('click', (e) => {
+    if (!matchMedia('(max-width: 820px)').matches) return;
+    if (e.target.closest('.attr-close')) { e.preventDefault(); e.stopPropagation(); box.classList.remove('open'); }
+    else if (!box.classList.contains('open')) { e.preventDefault(); box.classList.add('open'); }
+  }, true);
+}
 map.attributionControl.addAttribution('Elevation: <a href="https://registry.opendata.aws/terrain-tiles/">AWS Terrain Tiles</a>');
 
 // Rasters live in their own pane beneath vectors so streams and markers stay visible and clickable.
