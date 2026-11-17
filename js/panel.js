@@ -78,9 +78,14 @@ function setCollapsed(on) {
 }
 /** Fold the panel into its horizontal tab (desktop) or lower the sheet (phones); one call flips it. */
 export function togglePanel() {
-  if (phone.matches) setSheet(sheet === 'peek' ? 'half' : 'peek');
+  if (phone.matches) setSheet(sheet === 'peek' ? 'full' : 'peek');
   else setCollapsed(!panel.classList.contains('collapsed'));
 }
+/** Desktop: using the map (click, drag, popup) or pressing Escape tucks the panel back into its tab. */
+export function dismissPanel() {
+  if (!phone.matches && !panel.classList.contains('collapsed')) setCollapsed(true);
+}
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !e.defaultPrevented && !e.target.closest?.('input, textarea, select')) dismissPanel(); });
 export const panelOpen = () => (phone.matches ? sheet !== 'peek' : !panel.classList.contains('collapsed'));
 /** Tell the rest of the page where the panel ends, so the coach, toasts and legend stay clear of it. */
 function publish() {
@@ -132,7 +137,7 @@ export const onSheet = (fn) => subs.add(fn);
 
 /** Open (half) or close (peek) the panel; on desktop this is a no-op. */
 export function setDrawer(open) {
-  if (phone.matches) setSheet(open ? (sheet === 'peek' ? 'half' : sheet) : 'peek');
+  if (phone.matches) setSheet(open ? (sheet === 'peek' ? 'full' : sheet) : 'peek');
 }
 /** Get the sheet out of the way (phones only), e.g. while drawing on the map or reading News. */
 // Panes open and close in quick succession (news closes as tips opens). Both calls are queued and only
@@ -224,7 +229,7 @@ head.addEventListener('pointerdown', (e) => {
     head.removeEventListener('pointercancel', up);
     if (!moved) {
       // A tap on the header opens or lowers the sheet.
-      if (phone.matches) setSheet(sheet === 'peek' ? 'half' : 'peek');
+      if (phone.matches) setSheet(sheet === 'peek' ? 'full' : 'peek');
       else if (panel.classList.contains('collapsed')) setCollapsed(false);
       return;
     }

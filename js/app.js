@@ -1,6 +1,6 @@
 // Flood Depth UI: map, area selection, worker orchestration, exposure and exports.
 import * as G from './geo.js';
-import { foldStep, peekPanel, restorePanel, makeRoomForMap, setSheet, getSheet, onSheet, togglePanel, panelOpen, onPanel } from './panel.js';
+import { foldStep, peekPanel, restorePanel, makeRoomForMap, setSheet, getSheet, onSheet, togglePanel, panelOpen, onPanel, dismissPanel } from './panel.js';
 import { coach, coachBusy, restartCoach } from './coach.js';
 import { tipsMode, terrainOf, settlementOf, placeOf, renderTips, tipsHeader } from './tips.js';
 import { t, lang, languages, onLang, speak, stopSpeak, isSpeaking } from './i18n.js';
@@ -521,8 +521,8 @@ map.on('popupopen', () => {
   if (state.scenario) coach('exposure');
 });
 map.on('popupclose', () => { popupZoom = null; });
-map.on('dragstart popupopen', makeRoomForMap);
-map.on('click', () => { if (!drawing && Date.now() - lastDraw > 400) makeRoomForMap(); });
+map.on('dragstart popupopen', () => { makeRoomForMap(); if (!drawing) dismissPanel(); });
+map.on('click', () => { if (!drawing && Date.now() - lastDraw > 400) { makeRoomForMap(); dismissPanel(); } });
 map.on('zoomend', () => { if (popupZoom != null && map.getZoom() < popupZoom) map.closePopup(); });
 map.on('zoomend', () => syncLayers());
 
@@ -2217,7 +2217,7 @@ tabbar.addEventListener('click', (e) => {
   } else if (id === 'map') {
     const paneOpen = !newsPop.hidden || !tipsPop.hidden || anyToolOpen() || !$('#toolTray').hidden;
     closePanes();
-    setSheet(paneOpen || getSheet() === 'peek' ? 'half' : 'peek');
+    setSheet(paneOpen || getSheet() === 'peek' ? 'full' : 'peek');
   } else if (id === 'news') toggleNews();
   else if (id === 'tips') toggleTips();
   else if (id === 'share') toggleTool('share');
