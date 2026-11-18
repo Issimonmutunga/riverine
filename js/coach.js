@@ -74,9 +74,20 @@ export function coach(step) {
 export function coachBusy(msg) {
   if (off || at < 0) return;
   fade(msg ? () => {
-    el.innerHTML = `<p class="coach-busy"><b>${msg}</b> This takes under a minute.</p>`;
+    el.innerHTML = `<p class="coach-busy"><b>${msg}</b> <span class="coach-step">This takes under a minute.</span></p>
+      <div class="coach-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"><i></i></div>`;
     el.hidden = false;
   } : render);
+}
+/** Live progress inside the busy tip: a filling bar and the current stage (no-op when the tip isn't showing it). */
+export function coachProgress(msg, pct) {
+  const bar = el?.querySelector('.coach-bar');
+  if (!bar) return;
+  bar.style.setProperty('--p', `${Math.max(2, Math.min(100, pct))}%`);
+  bar.setAttribute('aria-valuenow', Math.round(pct));
+  bar.classList.toggle('wait', pct > 0 && pct <= 5);
+  const step = el.querySelector('.coach-step');
+  if (step && msg) step.textContent = `${msg} · ${Math.round(pct)}%`;
 }
 /** Start the tips again from wherever the user is now. */
 export function restartCoach(step) {

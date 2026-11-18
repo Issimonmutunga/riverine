@@ -1,7 +1,7 @@
 // Flood Depth UI: map, area selection, worker orchestration, exposure and exports.
 import * as G from './geo.js';
 import { foldStep, peekPanel, restorePanel, makeRoomForMap, setSheet, getSheet, onSheet, togglePanel, panelOpen, onPanel, dismissPanel } from './panel.js';
-import { coach, coachBusy, restartCoach } from './coach.js';
+import { coach, coachBusy, coachProgress, restartCoach } from './coach.js';
 import { tipsMode, terrainOf, settlementOf, placeOf, renderTips, tipsHeader } from './tips.js';
 import { t, lang, languages, onLang, speak, stopSpeak, isSpeaking } from './i18n.js';
 import { setupRail, openTool, closeTools, toggleTool, anyToolOpen } from './rail.js';
@@ -204,7 +204,10 @@ function setProgress(msg, pct) {
   p.hidden = false;
   p.classList.remove('failed');
   p.querySelector('.bar').style.setProperty('--p', `${pct}%`);
-  p.querySelector('.msg').textContent = msg;
+  p.querySelector('.bar').setAttribute('aria-valuenow', Math.round(pct));
+  p.querySelector('.bar').classList.toggle('wait', pct > 0 && pct <= 5);
+  p.querySelector('.msg').textContent = pct > 0 && pct < 100 ? `${msg} · ${Math.round(pct)}%` : msg;
+  coachProgress(msg, pct);
 }
 function stats(el, items) {
   el.hidden = false;
