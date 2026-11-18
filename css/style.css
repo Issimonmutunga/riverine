@@ -476,7 +476,7 @@ dialog .close { position: sticky; top: 14px; float: right; margin: 14px 14px 0 0
   .leaflet-control-attribution.compact:not(.open)::before {
     content: "i"; display: block; text-align: center; font: italic 700 13px/24px Georgia, serif; color: var(--muted);
   }
-  .leaflet-control-attribution.compact.open { max-width: calc(100vw - 24px); padding: 4px 10px; font-size: 10.5px; }
+  .leaflet-control-attribution.compact.open { max-width: min(260px, calc(100vw - 24px)); padding: 6px 10px; font-size: 10.5px; line-height: 1.35; white-space: normal; }
 
   /* Touch: 16px text so iOS doesn't zoom on focus, and finger-sized targets. */
   .search input, input[type=number], select { font-size: 16px; }
@@ -1150,6 +1150,8 @@ svg.inline { width: 14px; height: 14px; vertical-align: -2px; }
   /* Grabber */
   #panel::before { opacity: .5; top: 7px; }
   #panel[data-sheet=peek] .scroll { overflow: hidden; }
+  /* In peek nothing below the search may show through as a clipped sliver. */
+  #panel.drawer-closed .scroll { visibility: hidden; }
   .brand { padding: 20px 12px 6px 16px; cursor: grab; }
   .brand p { display: none; }
   .brand h1.wordmark { font-size: 21px; }

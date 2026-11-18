@@ -80,9 +80,13 @@ map.attributionControl.getContainer().classList.add('compact');
   new MutationObserver(keep).observe(box, { childList: true });
   box.addEventListener('click', (e) => {
     if (!matchMedia('(max-width: 820px)').matches) return;
-    if (e.target.closest('.attr-close')) { e.preventDefault(); e.stopPropagation(); box.classList.remove('open'); }
-    else if (!box.classList.contains('open')) { e.preventDefault(); box.classList.add('open'); }
+    // Open: a tap on the credits' text (not a link) or the ×, or moving the map, or a few seconds, folds it.
+    if (box.classList.contains('open') && !e.target.closest('a:not(.attr-close)')) { e.preventDefault(); e.stopPropagation(); fold(); }
+    else if (!box.classList.contains('open')) { e.preventDefault(); box.classList.add('open'); clearTimeout(t); t = setTimeout(fold, 6000); }
   }, true);
+  let t;
+  const fold = () => { clearTimeout(t); box.classList.remove('open'); };
+  map.on('movestart zoomstart click', fold);
 }
 map.attributionControl.addAttribution('Elevation: <a href="https://registry.opendata.aws/terrain-tiles/">AWS Terrain Tiles</a>');
 

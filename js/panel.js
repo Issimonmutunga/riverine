@@ -106,7 +106,7 @@ const probe = Object.assign(document.createElement('div'), { style: 'position:fi
 document.body.append(probe);
 function heights() {
   const room = innerHeight - tabbarH();
-  const peek = Math.round(head.offsetHeight + search.offsetHeight + 14);
+  const peek = Math.round(head.offsetHeight + search.offsetHeight + 8);
   return { peek, half: Math.max(peek + 120, Math.round(room * 0.5)), full: Math.round(room - 10 - probe.offsetHeight) };
 }
 function applySheet(px) {
