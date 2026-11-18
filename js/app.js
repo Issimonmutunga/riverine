@@ -29,7 +29,26 @@ const PRESETS = [
 ];
 
 // ---------------- Map ----------------
-const map = L.map('map', { zoomControl: false, preferCanvas: true }).setView([0.3, 36.5], 6);
+const NAIROBI = [-1.2864, 36.8172];
+const map = L.map('map', { zoomControl: false, preferCanvas: true }).setView(NAIROBI, 11);
+// The map stays put on Nairobi until "Pan" is switched on (or a search / example / location moves it for you),
+// so it can't be nudged off by a stray swipe while scrolling the sheet or tapping around.
+const PAN_HANDLERS = ['dragging', 'touchZoom', 'scrollWheelZoom', 'doubleClickZoom', 'boxZoom', 'keyboard'];
+let panOn = false, panPaused = false;
+function applyPan() {
+  const on = panOn && !panPaused;
+  for (const h of PAN_HANDLERS) map[h][on ? 'enable' : 'disable']();
+  const btn = document.getElementById('btnPan');
+  if (btn) { btn.setAttribute('aria-pressed', panOn); btn.title = panOn ? 'Pan on: tap to lock the map' : 'Map locked: tap to pan'; }
+  map.getContainer().classList.toggle('pan-locked', !panOn);
+}
+applyPan();
+document.getElementById('btnPan').addEventListener('click', (e) => {
+  e.stopPropagation();
+  panOn = !panOn;
+  applyPan();
+  toast(panOn ? 'Pan on: drag and zoom the map.' : 'Map locked in place.', false, 1800);
+});
 L.control.zoom({ position: 'bottomright' }).addTo(map);
 const ACCENT = '#0071e3';
 const bases = {
@@ -315,14 +334,14 @@ $('#btnDraw').addEventListener('click', () => {
   btn.classList.add('active');
   btn.querySelector('span').textContent = 'Drag on map…';
   peekPanel();
-  map.dragging.disable();
+  panPaused = true; applyPan(); // drawing needs the drag for itself
   map.getContainer().classList.add('aoi-drawing');
   toast(matchMedia('(pointer: coarse)').matches ? 'Drag a box on the map with your finger.' : 'Click and drag on the map to draw the analysis area.', false, 3500);
 });
 function stopDraw() {
   if (drawing?.rect) drawing.rect.remove();
   drawing = null;
-  map.dragging.enable();
+  panPaused = false; applyPan();
   map.getContainer().classList.remove('aoi-drawing');
   const btn = $('#btnDraw');
   btn.classList.remove('active');
@@ -2240,6 +2259,11 @@ function syncTabs() {
   tabsQueued = true;
   setTimeout(() => {
     tabsQueued = false;
+    // Classes on #app that the phone CSS keys off (map buttons, credits, lowered sheet).
+    const appEl = $('#app');
+    appEl.classList.toggle('sheet-full', getSheet() === 'full' && phoneMq.matches);
+    appEl.classList.toggle('pane-open', !newsPop.hidden || !tipsPop.hidden || !$('#toolTray').hidden || anyToolOpen());
+    appEl.classList.toggle('layers-open', !$('#layersPop').hidden);
     const shareOpen = !$('#pane-share').hidden;
     const wide = !phoneMq.matches;
     const current = !newsPop.hidden ? 'news' : !tipsPop.hidden ? 'tips' : shareOpen ? 'share'
@@ -2264,7 +2288,7 @@ function syncTabs() {
   }, 0);
 }
 const tabWatch = new MutationObserver(syncTabs);
-for (const el of [newsPop, tipsPop, $('#toolTray'), tipsBtn, $('#newsCount'), $('#btnMore'), ...$$('.side-pop'), ...$$('.tool-tray .rail-btn')]) {
+for (const el of [newsPop, tipsPop, $('#toolTray'), $('#layersPop'), tipsBtn, $('#newsCount'), $('#btnMore'), ...$$('.side-pop'), ...$$('.tool-tray .rail-btn')]) {
   tabWatch.observe(el, { attributes: true, attributeFilter: ['hidden', 'class', 'data-state'], childList: el.id === 'newsCount' });
 }
 onSheet(syncTabs);

@@ -23,7 +23,8 @@
   <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v11m-4.5-4.5L12 15l4.5-4.5M5 19.5h14"/></symbol>
   <symbol id="i-chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
   <symbol id="i-close" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></symbol>
-  <symbol id="i-locate" viewBox="0 0 24 24"><path d="M20 4 3.5 10.6l7 2.9 2.9 7z"/></symbol>
+  <symbol id="i-pan" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"/></symbol>
+  <symbol id="i-locate"viewBox="0 0 24 24"><path d="M20 4 3.5 10.6l7 2.9 2.9 7z"/></symbol>
   <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15.5V4.5M7.5 9 12 4.5 16.5 9M5 19.5h14"/></symbol>
   <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15zM10 20.5a2 2 0 0 0 4 0"/></symbol>
   <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4 2.8 19.5h18.4zM12 10v4.5M12 17.2v.1"/></symbol>
@@ -101,10 +102,6 @@
       <section class="step" id="stepArea">
         <h2><span class="num">1</span> Choose an area</h2>
         <div class="body">
-          <div class="actions">
-            <button id="btnDraw"><svg><use href="#i-draw"/></svg><span>Draw on map</span></button>
-            <button id="btnView"><svg><use href="#i-view"/></svg><span>Use this view</span></button>
-          </div>
           <label class="field select-inline">
             <span class="sr">Example site</span>
             <select id="preset">
@@ -404,6 +401,10 @@
         <button class="fab more-fab" id="btnMore" aria-label="More tools" title="More tools" aria-expanded="false" aria-controls="toolTray">more</button>
       </div>
     </div>
+    <button class="fab" id="btnPan" aria-label="Pan the map" title="Map locked: tap to pan" aria-pressed="false"><svg><use href="#i-pan"/></svg></button>
+    <!-- Choose the analysis area straight on the map: draw a box, or take what is on screen. -->
+    <button class="fab" id="btnDraw" aria-label="Draw the area on the map" title="Draw the area on the map"><svg><use href="#i-draw"/></svg><span class="sr">Draw on map</span></button>
+    <button class="fab" id="btnView" aria-label="Use this view as the area" title="Use this view as the area"><svg><use href="#i-view"/></svg><span class="sr">Use this view</span></button>
     <button class="fab" id="btnLocate" aria-label="Show my location and flood alerts" title="My location &amp; alerts" aria-pressed="false"><svg><use href="#i-locate"/></svg></button>
     <div id="meAlert" class="me-alert" role="status" hidden></div>
     <button class="fab mini" id="btnAlert" aria-label="Show flood alert for my location" title="Flood alert" hidden><svg><use href="#i-alert"/></svg></button>

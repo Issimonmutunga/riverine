@@ -345,7 +345,9 @@ button.icon:hover { color: var(--ink); }
   box-shadow: var(--glass-edge), var(--shadow); color: var(--ink);
 }
 .fab:hover:not(:disabled) { background: var(--surface-hover); }
-.fab[aria-expanded=true] { color: var(--accent); }
+.fab[aria-expanded=true], .fab[aria-pressed=true]#btnPan { color: var(--accent); }
+.fab.active { background: var(--accent); color: var(--accent-ink); }
+.leaflet-container.pan-locked { cursor: default; }
 .fab svg { width: 22px; height: 22px; }
 .popover {
   width: 270px; padding: 14px 16px 6px;
@@ -1214,8 +1216,21 @@ svg.inline { width: 14px; height: 14px; vertical-align: -2px; }
 
   /* Only map controls float on phones; News, tips and more live in the tab bar. */
   .mapctl { top: calc(12px + env(safe-area-inset-top)); }
+  /* The credits "i" floats in the same column, just under the locate button (44 + 8 + 44 + 8 below the top). */
+  .leaflet-control-attribution.compact {
+    position: fixed !important; top: calc(12px + env(safe-area-inset-top) + 260px); right: 12px; bottom: auto; margin: 0 !important; z-index: 800;
+  }
   #btnNews, #btnAdapt, #btnMore { display: none; }
-  #app:has(#panel[data-sheet=full]) .mapctl > .fab, #app:has(#panel[data-sheet=full]) .me-alert { visibility: hidden; }
+  /* #app gets .sheet-full / .pane-open / .layers-open from JS (cheap, unlike :has() over the whole map). The map's
+     buttons and the credits only show while the map does, and behind a pane they must not swallow its taps. */
+  #app.sheet-full .mapctl > .fab, #app.sheet-full .me-alert, #app.pane-open .mapctl > .fab,
+  #app.sheet-full .leaflet-control-attribution.compact, #app.pane-open .leaflet-control-attribution.compact,
+  #app.layers-open .leaflet-control-attribution.compact { visibility: hidden; }
+  #app.sheet-full .mapctl, #app.sheet-full .mapctl *, #app.pane-open .mapctl, #app.pane-open .mapctl *,
+  #app.sheet-full .coach, #app.pane-open .coach { pointer-events: none; }
+  #app.sheet-full .coach { opacity: 0; }
+  /* The flood pane's lowered strip must not sit on top of (and swallow taps for) another open pane. */
+  #app.pane-open #panel { visibility: hidden; pointer-events: none; }
 
   /* News, Tips, the tool tray and tool panes slide up from the tab bar as sheets. */
   .news-pop, .tips-pop, .side-pop, .tool-tray {
