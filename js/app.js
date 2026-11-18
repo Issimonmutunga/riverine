@@ -75,13 +75,17 @@ map.attributionControl.getContainer().classList.add('compact');
   const close = Object.assign(document.createElement('button'), { type: 'button', className: 'attr-close', textContent: '×', title: 'Hide credits' });
   close.setAttribute('aria-label', 'Hide credits');
   // Leaflet rewrites the credits' HTML whenever a source is added, so keep the button in place.
-  const keep = () => { if (box.firstChild !== close) box.prepend(close); };
+  // The credits are text only: no "Leaflet" link prefix, and every link is swapped for a plain span.
+  map.attributionControl.setPrefix(false);
+  const keep = () => {
+    for (const a of box.querySelectorAll('a')) a.replaceWith(Object.assign(document.createElement('span'), { textContent: a.textContent }));
+    if (box.firstChild !== close) box.prepend(close);
+  };
   keep();
   new MutationObserver(keep).observe(box, { childList: true });
   box.addEventListener('click', (e) => {
-    if (!matchMedia('(max-width: 820px)').matches) return;
     // Open: a tap on the credits' text (not a link) or the ×, or moving the map, or a few seconds, folds it.
-    if (box.classList.contains('open') && !e.target.closest('a:not(.attr-close)')) { e.preventDefault(); e.stopPropagation(); fold(); }
+    if (box.classList.contains('open')) { e.preventDefault(); e.stopPropagation(); fold(); }
     else if (!box.classList.contains('open')) { e.preventDefault(); box.classList.add('open'); clearTimeout(t); t = setTimeout(fold, 6000); }
   }, true);
   let t;

@@ -98,7 +98,8 @@ export const onPanel = (fn) => panelSubs.add(fn);
 
 // ---------------- Phone: a bottom sheet with three heights ----------------
 const ORDER = ['peek', 'half', 'full'];
-let sheet = 'peek', beforePeek = null;
+// Phones open on the full sheet, like every other pane; the map tab or a map tap lowers it to the peek.
+let sheet = phone.matches ? 'full' : 'peek', beforePeek = null;
 const subs = new Set();
 const tabbarH = () => document.getElementById('tabbar')?.offsetHeight || 0;
 // The notch / status-bar height, measured once with a probe (CSS env() can't be read directly).
@@ -107,7 +108,7 @@ document.body.append(probe);
 function heights() {
   const room = innerHeight - tabbarH();
   const peek = Math.round(head.offsetHeight + search.offsetHeight + 8);
-  return { peek, half: Math.max(peek + 120, Math.round(room * 0.5)), full: Math.round(room - 10 - probe.offsetHeight) };
+  return { peek, half: Math.max(peek + 120, Math.round(room * 0.5)), full: Math.round(room - 56 - probe.offsetHeight) }; // same top gap as the News / tips sheets
 }
 function applySheet(px) {
   panel.style.setProperty('--sheet-h', `${px}px`);
@@ -290,3 +291,5 @@ if (store.get('collapsed')) panel.classList.add('collapsed');
 requestAnimationFrame(layout);
 addEventListener('load', layout);
 layout();
+// The first sizing must not animate (it would grow up from the default height); later changes do.
+requestAnimationFrame(() => requestAnimationFrame(() => panel.classList.add('ready')));
