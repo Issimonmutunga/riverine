@@ -43,10 +43,45 @@ function applyPan() {
   map.getContainer().classList.toggle('pan-locked', !panOn);
 }
 applyPan();
+// A playful nudge: poke at the locked map and a bubble with a curved arrow points at the Pan button.
+// It goes away for good once Pan has been used.
+const PAN_HINT_KEY = 'floodDepth.panHintDone';
+let panHintDone = false;
+try { panHintDone = localStorage.getItem(PAN_HINT_KEY) === '1'; } catch { /* storage unavailable */ }
+const panHint = Object.assign(document.createElement('button'), { type: 'button', className: 'pan-hint', hidden: true });
+panHint.innerHTML = '<span>Trying to move the map? <b>Click here!</b></span>'
+  + '<svg viewBox="0 0 44 34" aria-hidden="true"><path class="tail" d="M3 4 C 4 26, 26 30, 38 15"/><path class="head" d="M31 12 L39 14 L35 22"/></svg>';
+document.body.append(panHint);
+let panHintTimer;
+function hidePanHint() { clearTimeout(panHintTimer); panHint.hidden = true; }
+function showPanHint() {
+  const appCls = document.getElementById('app').classList;
+  if (panHintDone || panOn || panPaused || !panHint.hidden || appCls.contains('sheet-full') || appCls.contains('pane-open') || appCls.contains('layers-open')) return;
+  const btn = document.getElementById('btnPan').getBoundingClientRect();
+  if (!btn.width || getComputedStyle(document.getElementById('btnPan')).visibility === 'hidden') return; // pan button not on screen
+  panHint.style.right = `${innerWidth - btn.left + 8}px`;
+  panHint.style.top = `${btn.top + btn.height / 2}px`;
+  panHint.hidden = false;
+  clearTimeout(panHintTimer);
+  panHintTimer = setTimeout(hidePanHint, 7000);
+}
+panHint.addEventListener('click', () => document.getElementById('btnPan').click());
+{
+  // Dragging, pinching or wheel-zooming a locked map counts as "trying to move it".
+  const el = map.getContainer();
+  let down = null;
+  el.addEventListener('pointerdown', (e) => { if (e.isPrimary && !e.target.closest('.leaflet-control')) down = { x: e.clientX, y: e.clientY }; });
+  el.addEventListener('pointermove', (e) => { if (down && e.buttons !== 0 && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 10) { down = null; showPanHint(); } });
+  addEventListener('pointerup', () => { down = null; });
+  addEventListener('pointercancel', () => { down = null; });
+  el.addEventListener('wheel', () => showPanHint(), { passive: true });
+  el.addEventListener('touchstart', (e) => { if (e.touches.length > 1) showPanHint(); }, { passive: true });
+}
 document.getElementById('btnPan').addEventListener('click', (e) => {
   e.stopPropagation();
   panOn = !panOn;
   applyPan();
+  if (panOn) { panHintDone = true; hidePanHint(); try { localStorage.setItem(PAN_HINT_KEY, '1'); } catch { /* storage unavailable */ } }
   toast(panOn ? 'Pan on: drag and zoom the map.' : 'Map locked in place.', false, 1800);
 });
 L.control.zoom({ position: 'bottomright' }).addTo(map);
