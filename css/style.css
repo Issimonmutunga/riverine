@@ -1525,3 +1525,5 @@ svg.inline { width: 14px; height: 14px; vertical-align: -2px; }
 .pan-hint svg { color: var(--accent); }
 /* The hillshade blends into the dark base as relief rather than a grey wash. */
 .hillshade-blend { mix-blend-mode: soft-light; }
+/* While the pan hint is up, the first-run tip card steps aside so the two never overlap. */
+#app.hint-on .coach { opacity: 0; pointer-events: none; }
