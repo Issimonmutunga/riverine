@@ -11,7 +11,8 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
-  <link rel="stylesheet" href="css/style.css?v=20261119b">
+  <script>try{var t=localStorage.getItem("floodDepth.theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
+  <link rel="stylesheet" href="css/style.css?v=20261119c">
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -409,12 +410,20 @@
     <div id="meAlert" class="me-alert" role="status" hidden></div>
     <button class="fab mini" id="btnAlert" aria-label="Show flood alert for my location" title="Flood alert" hidden><svg><use href="#i-alert"/></svg></button>
     <div class="popover" id="layersPop" hidden>
+      <h3>Appearance</h3>
+      <fieldset class="seg" id="themeSeg">
+        <legend class="sr">Light or dark mode</legend>
+        <label><input type="radio" name="theme" value="auto" checked> Auto</label>
+        <label><input type="radio" name="theme" value="light"> Light</label>
+        <label><input type="radio" name="theme" value="dark"> Dark</label>
+      </fieldset>
       <h3>Map</h3>
       <fieldset class="seg" id="basemap">
         <legend class="sr">Base map</legend>
         <label><input type="radio" name="basemap" value="OpenStreetMap" checked> Default</label>
         <label><input type="radio" name="basemap" value="OpenTopoMap"> Terrain</label>
         <label><input type="radio" name="basemap" value="Sentinel-2 cloudless 2016"> Satellite</label>
+        <label><input type="radio" name="basemap" value="Dark terrain"> Dark</label>
       </fieldset>
       <h3>Overlays</h3>
       <label class="toggle"><span>Flood</span><input type="checkbox" class="switch" data-layer="flood" checked></label>
@@ -544,6 +553,6 @@
 </dialog>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-<script type="module" src="js/app.js?v=20261119b"></script>
+<script type="module" src="js/app.js?v=20261119c"></script>
 </body>
 </html>

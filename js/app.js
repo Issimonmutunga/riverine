@@ -101,15 +101,57 @@ const bases = {
   'Sentinel-2 cloudless 2016': L.tileLayer('https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless_3857/default/g/{z}/{y}/{x}.jpg', {
     maxZoom: 17, attribution: '<a href="https://s2maps.eu">Sentinel-2 cloudless</a> by EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2016, CC BY 4.0)',
   }),
+  // Dark terrain: a dark base, Esri hillshade blended in for relief, and labels on top.
+  'Dark terrain': L.layerGroup([
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19, maxNativeZoom: 16, zIndex: 1,
+      attribution: 'Dark base © Esri, HERE, Garmin, OpenStreetMap contributors',
+    }),
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 16, maxNativeZoom: 13, zIndex: 2, opacity: 0.55, className: 'hillshade-blend',
+      attribution: 'Hillshade © Esri, USGS, NOAA',
+    }),
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, maxNativeZoom: 16, zIndex: 3 }),
+  ]),
 };
 bases['OpenStreetMap'].addTo(map);
 // Scale sits with the other map controls, away from the panel on the left.
 L.control.scale({ imperial: false, position: 'bottomright', maxWidth: 110 }).addTo(map);
-$$('input[name=basemap]').forEach((r) => r.addEventListener('change', () => {
-  for (const [k, layer] of Object.entries(bases)) {
-    if (k === r.value) layer.addTo(map); else layer.remove();
-  }
+
+// ---------------- Light / dark appearance ----------------
+// "Auto" follows the device; Light and Dark force it. Dark pairs with the dark terrain basemap (unless the
+// person picked Terrain or Satellite themselves), and going back to light returns to the default map.
+const THEME_KEY = 'floodDepth.theme';
+const darkMq = matchMedia('(prefers-color-scheme: dark)');
+let themeChoice = 'auto';
+try { themeChoice = localStorage.getItem(THEME_KEY) || 'auto'; } catch { /* storage unavailable */ }
+const isDark = () => (themeChoice === 'auto' ? darkMq.matches : themeChoice === 'dark');
+let currentBase = 'OpenStreetMap';
+function setBase(name) {
+  currentBase = name;
+  for (const [k, layer] of Object.entries(bases)) { if (k === name) layer.addTo(map); else layer.remove(); }
+  const radio = document.querySelector(`input[name=basemap][value="${name}"]`);
+  if (radio) radio.checked = true;
+}
+function applyTheme() {
+  const root = document.documentElement;
+  if (themeChoice === 'auto') delete root.dataset.theme; else root.dataset.theme = themeChoice;
+  // One theme-color for the browser bar, matching what is showing.
+  const metas = document.querySelectorAll('meta[name=theme-color]');
+  metas.forEach((m, i) => { if (i) m.remove(); else { m.removeAttribute('media'); m.content = isDark() ? '#000000' : '#f5f5f7'; } });
+  const radio = document.querySelector(`input[name=theme][value="${themeChoice}"]`);
+  if (radio) radio.checked = true;
+  if (isDark() && currentBase === 'OpenStreetMap') setBase('Dark terrain');
+  else if (!isDark() && currentBase === 'Dark terrain') setBase('OpenStreetMap');
+}
+$$('input[name=basemap]').forEach((r) => r.addEventListener('change', () => setBase(r.value)));
+$$('input[name=theme]').forEach((r) => r.addEventListener('change', () => {
+  themeChoice = r.value;
+  try { localStorage.setItem(THEME_KEY, themeChoice); } catch { /* storage unavailable */ }
+  applyTheme();
 }));
+darkMq.addEventListener('change', () => { if (themeChoice === 'auto') applyTheme(); });
+applyTheme();
 
 // Layers popover
 const layersBtn = $('#btnLayers'), layersPop = $('#layersPop');

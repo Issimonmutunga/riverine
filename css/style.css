@@ -28,7 +28,7 @@
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+:root:not([data-theme="light"]) {
     --bg: #000000;
     --surface: rgb(28 28 30 / 70%);
     --surface-strong: rgb(28 28 30 / 78%);
@@ -54,6 +54,32 @@
     color-scheme: dark;
   }
 }
+
+:root[data-theme="dark"] {
+    --bg: #000000;
+    --surface: rgb(28 28 30 / 70%);
+    --surface-strong: rgb(28 28 30 / 78%);
+    --surface-hover: rgb(44 44 46 / 82%);
+    --glass-edge: inset 0 0 0 .5px rgb(255 255 255 / 12%);
+    --solid: #1c1c1e;
+    --ink: #f5f5f7;
+    --muted: #98989d;
+    --faint: #636366;
+    --line: rgb(255 255 255 / 9%);
+    --step-ground: rgb(0 0 0 / 26%); --step-bg: rgb(255 255 255 / 9%);
+    --step-edge: 0 0 0 .5px rgb(255 255 255 / 10%), 0 2px 10px rgb(0 0 0 / 25%);
+    --fill: rgb(118 118 128 / 24%);
+    --fill-hover: rgb(118 118 128 / 32%);
+    --accent: #2997ff;
+    --accent-ink: #ffffff;
+    --accent-soft: rgb(41 151 255 / 16%);
+    --warn: #ffb340;
+    --warn-soft: rgb(255 159 10 / 14%);
+    --danger: #ff453a;
+    --shadow: 0 0 0 .5px rgb(255 255 255 / 8%), 0 8px 28px rgb(0 0 0 / 50%);
+    --shadow-sm: 0 0 0 .5px rgb(255 255 255 / 8%), 0 2px 8px rgb(0 0 0 / 40%);
+    color-scheme: dark;
+  }
 
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -641,7 +667,11 @@ h3.sub { margin: 18px 0 0; font-size: 13px; font-weight: 600; overflow: hidden; 
 /* ---------- Flood News: pane beside the map controls ----------
    Figure/ground: a grouped grey ground with solid cards on it, in the system (SF) sans. */
 .mapctl { --ground: rgb(242 242 247 / 66%); --card: rgb(255 255 255 / 62%); }
-@media (prefers-color-scheme: dark) { .mapctl { --ground: rgb(28 28 30 / 74%); --card: rgb(72 72 74 / 46%); } }
+@media (prefers-color-scheme: dark) {
+:where(:root:not([data-theme="light"])) .mapctl { --ground: rgb(28 28 30 / 74%); --card: rgb(72 72 74 / 46%); }
+}
+
+:where(:root[data-theme="dark"]) .mapctl { --ground: rgb(28 28 30 / 74%); --card: rgb(72 72 74 / 46%); }
 /* News button: a slanted two-band ribbon, graphite over red, with a folded tail. */
 .news-fab {
   position: relative; width: auto; height: auto; padding: 4px 2px 6px; border-radius: 8px;
@@ -660,7 +690,11 @@ h3.sub { margin: 18px 0 0; font-size: 13px; font-weight: 600; overflow: hidden; 
 }
 .ribbon b { position: relative; z-index: 1; padding: 4px 6px 3px; font-size: 9.5px; letter-spacing: .08em; color: #e5e5ea; background: #2c2c2e; clip-path: polygon(0 8%, 100% 0, 100% 100%, 0 100%); }
 .ribbon i { padding: 3px 7px 4px 6px; margin: -1px 0 0 8px; font-size: 12.5px; background: #d71f30; clip-path: polygon(4% 0, 100% 0, 96% 100%, 0 100%); }
-@media (prefers-color-scheme: dark) { .ribbon b { background: #48484a; } }
+@media (prefers-color-scheme: dark) {
+:where(:root:not([data-theme="light"])) .ribbon b { background: #48484a; }
+}
+
+:where(:root[data-theme="dark"]) .ribbon b { background: #48484a; }
 /* folded tail under the red band */
 .ribbon::after { content: ""; position: absolute; left: 0; top: 15px; border: 5px solid transparent; border-top-color: #0b0b0c; border-left-color: #0b0b0c; }
 .news-fab .count {
@@ -821,7 +855,11 @@ h3.sub { margin: 18px 0 0; font-size: 13px; font-weight: 600; overflow: hidden; 
 /* Tips already carries the location alert, so the callout waits behind it. */
 #app:has(#tipsPop:not([hidden])) :is(.me-alert, #btnAlert) { display: none; }
 .tips-fab { position: relative; font-size: 14px; font-weight: 750; letter-spacing: -0.01em; line-height: 1; color: #248a3d; }
-@media (prefers-color-scheme: dark) { .tips-fab { color: #30d158; } }
+@media (prefers-color-scheme: dark) {
+:where(:root:not([data-theme="light"])) .tips-fab { color: #30d158; }
+}
+
+:where(:root[data-theme="dark"]) .tips-fab { color: #30d158; }
 .tips-fab[aria-expanded=true] { color: var(--accent); }
 .tips-fab.ready { color: #ff9500; }
 .tips-fab.danger { background: #e0301e !important; color: #fff; }
@@ -851,7 +889,11 @@ h3.sub { margin: 18px 0 0; font-size: 13px; font-weight: 600; overflow: hidden; 
 .tip-kicker { display: block; font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #248a3d; }
 .tip-hero.danger .tip-kicker { color: var(--danger); }
 .tip-hero.ready .tip-kicker { color: var(--warn); }
-@media (prefers-color-scheme: dark) { .tip-hero.adapt .tip-kicker { color: #30d158; } }
+@media (prefers-color-scheme: dark) {
+:where(:root:not([data-theme="light"])) .tip-hero.adapt .tip-kicker { color: #30d158; }
+}
+
+:where(:root[data-theme="dark"]) .tip-hero.adapt .tip-kicker { color: #30d158; }
 .tip-hero h3 { margin: 2px 0 4px; font-size: 21px; font-weight: 750; letter-spacing: -0.025em; line-height: 1.2; }
 .tip-hero p { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.4; }
 .tip-hero p b { color: var(--ink); font-weight: 600; }
@@ -969,10 +1011,42 @@ h3.sub { margin: 18px 0 0; font-size: 13px; font-weight: 600; overflow: hidden; 
 .tool-lang .rail-btn { --c: #636366; }
 .tool-bag .rail-btn { --c: #c76a00; }
 @media (prefers-color-scheme: dark) {
-  .tool-route .rail-btn { --c: #30d158; } .tool-shelters .rail-btn { --c: #40c8b8; } .tool-offline .rail-btn { --c: #2997ff; }
-  .tool-share .rail-btn { --c: #ff453a; } .tool-marks .rail-btn { --c: #64a8ff; } .tool-past .rail-btn { --c: #bf5af2; }
-  .tool-timeline .rail-btn { --c: #7d7aff; } .tool-lang .rail-btn { --c: #aeaeb2; } .tool-bag .rail-btn { --c: #ff9f0a; }
+:where(:root:not([data-theme="light"])) .tool-route .rail-btn { --c: #30d158; }
+
+:where(:root:not([data-theme="light"])) .tool-shelters .rail-btn { --c: #40c8b8; }
+
+:where(:root:not([data-theme="light"])) .tool-offline .rail-btn { --c: #2997ff; }
+
+:where(:root:not([data-theme="light"])) .tool-share .rail-btn { --c: #ff453a; }
+
+:where(:root:not([data-theme="light"])) .tool-marks .rail-btn { --c: #64a8ff; }
+
+:where(:root:not([data-theme="light"])) .tool-past .rail-btn { --c: #bf5af2; }
+
+:where(:root:not([data-theme="light"])) .tool-timeline .rail-btn { --c: #7d7aff; }
+
+:where(:root:not([data-theme="light"])) .tool-lang .rail-btn { --c: #aeaeb2; }
+
+:where(:root:not([data-theme="light"])) .tool-bag .rail-btn { --c: #ff9f0a; }
 }
+
+:where(:root[data-theme="dark"]) .tool-route .rail-btn { --c: #30d158; }
+
+:where(:root[data-theme="dark"]) .tool-shelters .rail-btn { --c: #40c8b8; }
+
+:where(:root[data-theme="dark"]) .tool-offline .rail-btn { --c: #2997ff; }
+
+:where(:root[data-theme="dark"]) .tool-share .rail-btn { --c: #ff453a; }
+
+:where(:root[data-theme="dark"]) .tool-marks .rail-btn { --c: #64a8ff; }
+
+:where(:root[data-theme="dark"]) .tool-past .rail-btn { --c: #bf5af2; }
+
+:where(:root[data-theme="dark"]) .tool-timeline .rail-btn { --c: #7d7aff; }
+
+:where(:root[data-theme="dark"]) .tool-lang .rail-btn { --c: #aeaeb2; }
+
+:where(:root[data-theme="dark"]) .tool-bag .rail-btn { --c: #ff9f0a; }
 /* Share: the megaphone's sound waves radiate outward. */
 .shout { overflow: visible; }
 .shout .w1, .shout .w2, .shout .w3 { animation: radiate 1.8s ease-out infinite; }
@@ -1008,7 +1082,15 @@ h3.sub { margin: 18px 0 0; font-size: 13px; font-weight: 600; overflow: hidden; 
 .side-hero p { margin: 2px 0 0; font-size: 13px; color: var(--muted); }
 .side-hero p.wet { color: #1f5fa8; font-weight: 550; }
 .side-hero p.drytxt { color: #248a3d; font-weight: 550; }
-@media (prefers-color-scheme: dark) { .side-hero p.wet { color: #64a8ff; } .side-hero p.drytxt { color: #30d158; } }
+@media (prefers-color-scheme: dark) {
+:where(:root:not([data-theme="light"])) .side-hero p.wet { color: #64a8ff; }
+
+:where(:root:not([data-theme="light"])) .side-hero p.drytxt { color: #30d158; }
+}
+
+:where(:root[data-theme="dark"]) .side-hero p.wet { color: #64a8ff; }
+
+:where(:root[data-theme="dark"]) .side-hero p.drytxt { color: #30d158; }
 .side-hero.go { box-shadow: inset 0 0 0 1px rgb(52 199 89 / 35%); background: rgb(52 199 89 / 12%); }
 .side-hero .side-warn { margin-top: 8px; }
 .side-btns { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -1041,7 +1123,11 @@ h3.sub { margin: 18px 0 0; font-size: 13px; font-weight: 600; overflow: hidden; 
 .pill.ok { background: rgb(52 199 89 / 18%); color: #248a3d; }
 .pill.bad { background: rgb(224 48 30 / 15%); color: var(--danger); }
 .pill.warn { background: rgb(255 149 0 / 16%); color: var(--warn); }
-@media (prefers-color-scheme: dark) { .pill.ok { color: #30d158; } }
+@media (prefers-color-scheme: dark) {
+:where(:root:not([data-theme="light"])) .pill.ok { color: #30d158; }
+}
+
+:where(:root[data-theme="dark"]) .pill.ok { color: #30d158; }
 .mark-dot { width: 40px; height: 40px; border-radius: 8px; flex: none; background: linear-gradient(180deg, transparent 45%, #1f5fa8 45%); opacity: .5; }
 
 .side-status { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
@@ -1120,7 +1206,11 @@ svg.inline { width: 14px; height: 14px; vertical-align: -2px; }
 }
 .share-quick:hover:not(:disabled) { background: var(--solid); filter: brightness(.97); }
 .share-quick svg { width: 15px; height: 15px; }
-@media (prefers-color-scheme: dark) { .share-quick { color: #ff6961; box-shadow: inset 0 0 0 1.5px #ff6961; } }
+@media (prefers-color-scheme: dark) {
+:where(:root:not([data-theme="light"])) .share-quick { color: #ff6961; box-shadow: inset 0 0 0 1.5px #ff6961; }
+}
+
+:where(:root[data-theme="dark"]) .share-quick { color: #ff6961; box-shadow: inset 0 0 0 1.5px #ff6961; }
 .side-body .chip.text-all { display: flex; justify-content: center; width: 100%; padding: 11px 14px; font-size: 14px; background: #e0301e; color: #fff; }
 .side-body .chip.text-all svg { width: 17px; height: 17px; }
 .side-list.contacts li { cursor: default; }
@@ -1226,10 +1316,18 @@ svg.inline { width: 14px; height: 14px; vertical-align: -2px; }
   .tab-dot { position: absolute; top: 6px; right: 7px; width: 8px; height: 8px; border-radius: 50%; background: #ff9500; }
   .tab-dot.danger { background: #e0301e; }
   @media (prefers-color-scheme: dark) {
-    .tab[data-tab=tips] { color: #30d158; }
-    .tab-sos { color: #ff6961; }
-    .tab[aria-current=page] { background: #f5f5f7; color: #1d1d1f; }
-  }
+:where(:root:not([data-theme="light"])) .tab[data-tab=tips] { color: #30d158; }
+
+:where(:root:not([data-theme="light"])) .tab-sos { color: #ff6961; }
+
+:where(:root:not([data-theme="light"])) .tab[aria-current=page] { background: #f5f5f7; color: #1d1d1f; }
+}
+
+:where(:root[data-theme="dark"]) .tab[data-tab=tips] { color: #30d158; }
+
+:where(:root[data-theme="dark"]) .tab-sos { color: #ff6961; }
+
+:where(:root[data-theme="dark"]) .tab[aria-current=page] { background: #f5f5f7; color: #1d1d1f; }
 
   /* Only map controls float on phones; News, tips and more live in the tab bar. */
   .mapctl { top: calc(12px + env(safe-area-inset-top)); }
@@ -1327,9 +1425,14 @@ svg.inline { width: 14px; height: 14px; vertical-align: -2px; }
   .tab-dot { position: absolute; top: 6px; right: 7px; width: 8px; height: 8px; border-radius: 50%; background: #ff9500; }
   .tab-dot.danger { background: #e0301e; }
   @media (prefers-color-scheme: dark) {
-    .tab[data-tab=tips]:not([aria-current=page]) { color: #30d158; }
-    .tab-sos:not([aria-current=page]) { color: #ff6961; }
-  }
+:where(:root:not([data-theme="light"])) .tab[data-tab=tips]:not([aria-current=page]) { color: #30d158; }
+
+:where(:root:not([data-theme="light"])) .tab-sos:not([aria-current=page]) { color: #ff6961; }
+}
+
+:where(:root[data-theme="dark"]) .tab[data-tab=tips]:not([aria-current=page]) { color: #30d158; }
+
+:where(:root[data-theme="dark"]) .tab-sos:not([aria-current=page]) { color: #ff6961; }
 
   /* The column under the toolbar keeps only Layers and My location. */
   .mapctl { top: 68px; }
@@ -1409,3 +1512,16 @@ svg.inline { width: 14px; height: 14px; vertical-align: -2px; }
 .pan-hint li { padding: 1px 0; }
 .pan-hint .ph-cta { display: inline-block; padding: 5px 11px; border-radius: 99px; background: rgb(255 255 255 / 92%); color: var(--accent); font-size: 13px; font-weight: 800; }
 .pan-hint svg { width: 44px; height: 34px; margin-right: -2px; }
+
+/* Pan hint follows the theme: the same frosted surface and ink as the panels, accent only for the call to action. */
+.pan-hint {
+  background: var(--surface-hover); color: var(--ink);
+  -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
+  box-shadow: var(--glass-edge), var(--shadow);
+}
+.pan-hint .ph-title { color: var(--ink); }
+.pan-hint ol { color: var(--muted); }
+.pan-hint .ph-cta { background: var(--accent); color: var(--accent-ink); }
+.pan-hint svg { color: var(--accent); }
+/* The hillshade blends into the dark base as relief rather than a grey wash. */
+.hillshade-blend { mix-blend-mode: soft-light; }
