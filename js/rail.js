@@ -66,11 +66,14 @@ export function addTool(spec) {
 }
 
 function label(tool) {
-  tool.btn.querySelector('span').textContent = t(`rail.${tool.id}`);
-  tool.btn.title = t(`title.${tool.id}`);
-  tool.btn.setAttribute('aria-label', t(`title.${tool.id}`));
-  tool.pane.setAttribute('aria-label', t(`title.${tool.id}`));
-  tool.pane.querySelector('h2').textContent = t(`title.${tool.id}`);
+  // If a translation is missing, show the tool's id as a readable name rather than the raw key.
+  const fallback = tool.id.charAt(0).toUpperCase() + tool.id.slice(1);
+  const tr = (key) => { const v = t(key); return v === key ? fallback : v; };
+  tool.btn.querySelector('span').textContent = tr(`rail.${tool.id}`);
+  tool.btn.title = tr(`title.${tool.id}`);
+  tool.btn.setAttribute('aria-label', tr(`title.${tool.id}`));
+  tool.pane.setAttribute('aria-label', tr(`title.${tool.id}`));
+  tool.pane.querySelector('h2').textContent = tr(`title.${tool.id}`);
   tool.pane.querySelector('.close').setAttribute('aria-label', t('close'));
   const sp = tool.pane.querySelector('.speak');
   if (sp) { sp.setAttribute('aria-label', t('listen')); sp.title = t('listen'); }

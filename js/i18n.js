@@ -7,7 +7,7 @@ const KEY = 'floodDepth.lang';
 const S = {
   en: {
     'rail.route': 'Route', 'rail.shelters': 'Shelters', 'rail.offline': 'Offline', 'rail.share': 'SOS',
-    'rail.marks': 'Marks', 'rail.past': 'Past', 'rail.timeline': '10 days', 'rail.lang': 'Language', 'rail.bag': 'Grab bag', 'rail.trust': 'Trust', 'title.trust': 'What to trust',
+    'rail.marks': 'Marks', 'rail.past': 'Past', 'rail.timeline': '10 days', 'rail.lang': 'Language', 'rail.bag': 'Grab bag', 'rail.trust': 'Trust', 'title.trust': 'Trust',
     'title.route': 'Safe route on foot', 'title.shelters': 'Nearest safe shelter', 'title.offline': 'Works offline',
     'title.share': 'Share my situation', 'title.marks': 'Flood marks', 'title.past': 'Past floods',
     'title.timeline': 'Flood in the next 10 days', 'title.lang': 'Language', 'title.bag': 'Grab bag checklist',
@@ -57,7 +57,7 @@ const S = {
   },
   sw: {
     'rail.route': 'Njia', 'rail.shelters': 'Makazi', 'rail.offline': 'Bila mtandao', 'rail.share': 'SOS',
-    'rail.marks': 'Alama', 'rail.past': 'Zamani', 'rail.timeline': 'Siku 10', 'rail.lang': 'Lugha', 'rail.bag': 'Begi', 'rail.trust': 'Imani', 'title.trust': 'Nini cha kuamini',
+    'rail.marks': 'Alama', 'rail.past': 'Zamani', 'rail.timeline': 'Siku 10', 'rail.lang': 'Lugha', 'rail.bag': 'Begi', 'rail.trust': 'Imani', 'title.trust': 'Imani',
     'title.route': 'Njia salama kwa miguu', 'title.shelters': 'Makazi salama yaliyo karibu', 'title.offline': 'Inafanya kazi bila mtandao',
     'title.share': 'Tuma hali yangu', 'title.marks': 'Alama za mafuriko', 'title.past': 'Mafuriko ya zamani',
     'title.timeline': 'Mafuriko siku 10 zijazo', 'title.lang': 'Lugha', 'title.bag': 'Orodha ya begi la dharura',
@@ -107,7 +107,7 @@ const S = {
   },
   fr: {
     'rail.route': 'Itinéraire', 'rail.shelters': 'Abris', 'rail.offline': 'Hors ligne', 'rail.share': 'SOS',
-    'rail.marks': 'Repères', 'rail.past': 'Passé', 'rail.timeline': '10 jours', 'rail.lang': 'Langue', 'rail.bag': 'Sac', 'rail.trust': 'Confiance', 'title.trust': 'À quoi se fier',
+    'rail.marks': 'Repères', 'rail.past': 'Passé', 'rail.timeline': '10 jours', 'rail.lang': 'Langue', 'rail.bag': 'Sac', 'rail.trust': 'Confiance', 'title.trust': 'Confiance',
     'title.route': 'Itinéraire sûr à pied', 'title.shelters': 'Abri sûr le plus proche', 'title.offline': 'Fonctionne hors ligne',
     'title.share': 'Signaler ma situation', 'title.marks': 'Repères de crue', 'title.past': 'Crues passées',
     'title.timeline': 'La crue sur 10 jours', 'title.lang': 'Langue', 'title.bag': 'Sac d’urgence',
