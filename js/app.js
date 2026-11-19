@@ -14,6 +14,7 @@ import { initTimeline } from './features/timeline.js';
 import { initLanguage } from './features/language.js';
 import { initChecklist } from './features/checklist.js';
 import { initTrust } from './features/trust.js';
+import { initContact } from './features/contact.js';
 import { initDataHub } from './datahub.js';
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -2307,6 +2308,7 @@ initTimeline(ctx);
 initLanguage();
 initChecklist(ctx);
 initTrust(ctx);
+initContact(ctx);
 
 // Data in and out, in the main panel: sharper DEMs, survey requests, sharing and the dataset catalogue.
 initDataHub(ctx);
