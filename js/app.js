@@ -48,8 +48,12 @@ applyPan();
 const PAN_HINT_KEY = 'floodDepth.panHintDone';
 let panHintDone = false;
 try { panHintDone = localStorage.getItem(PAN_HINT_KEY) === '1'; } catch { /* storage unavailable */ }
-const panHint = Object.assign(document.createElement('button'), { type: 'button', className: 'pan-hint', hidden: true });
-panHint.innerHTML = '<span>Trying to move the map? <b>Click here!</b></span>'
+const panHint = Object.assign(document.createElement('div'), { className: 'pan-hint', hidden: true, tabIndex: 0 });
+panHint.setAttribute('role', 'dialog');
+panHint.setAttribute('aria-label', 'The map is locked. Use the pan tool to move or zoom it.');
+panHint.innerHTML = '<div class="ph-text"><b class="ph-title">Trying to do this?</b>'
+  + '<ol><li>Zoom in / out</li><li>Move the map</li></ol>'
+  + '<span class="ph-cta">Click the pan tool!</span></div>'
   + '<svg viewBox="0 0 44 34" aria-hidden="true"><path class="tail" d="M3 4 C 4 26, 26 30, 38 15"/><path class="head" d="M31 12 L39 14 L35 22"/></svg>';
 document.body.append(panHint);
 let panHintTimer;
@@ -66,6 +70,7 @@ function showPanHint() {
   panHintTimer = setTimeout(hidePanHint, 7000);
 }
 panHint.addEventListener('click', () => document.getElementById('btnPan').click());
+panHint.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); document.getElementById('btnPan').click(); } });
 {
   // Dragging, pinching or wheel-zooming a locked map counts as "trying to move it".
   const el = map.getContainer();

@@ -1402,3 +1402,10 @@ svg.inline { width: 14px; height: 14px; vertical-align: -2px; }
 .pan-hint svg path { fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
 @keyframes hint-in { from { opacity: 0; transform: translateY(-50%) scale(.92); } }
 @keyframes hint-nudge { 50% { transform: translateX(4px); } }
+/* Dialog layout for the pan hint: a title, the two things people are trying to do, and the call to action. */
+.pan-hint { align-items: center; padding: 14px 10px 14px 18px; max-width: min(270px, calc(100vw - 90px)); border-radius: 18px; font-weight: 500; }
+.pan-hint .ph-title { display: block; font-size: 15px; font-weight: 800; letter-spacing: -.01em; margin-bottom: 4px; }
+.pan-hint ol { margin: 0 0 8px; padding-left: 20px; font-size: 14px; font-weight: 600; }
+.pan-hint li { padding: 1px 0; }
+.pan-hint .ph-cta { display: inline-block; padding: 5px 11px; border-radius: 99px; background: rgb(255 255 255 / 92%); color: var(--accent); font-size: 13px; font-weight: 800; }
+.pan-hint svg { width: 44px; height: 34px; margin-right: -2px; }
