@@ -147,16 +147,47 @@ async function drawTiles(ctx2, map, layers, zp, tlx, tly, W, H, onTile) {
 }
 
 // ---------- The map picture ----------
+/** The area the active layers cover: the flood and terrain rasters, or the analysis box when there are none. */
+function activeBounds(map, state) {
+  const shown = Object.values(map._layers).filter((l) => l instanceof L.ImageOverlay && l._image && l._image.naturalWidth);
+  let lb = null;
+  for (const l of shown) { const b = l.getBounds(); lb = lb ? lb.extend(b) : L.latLngBounds(b.getSouthWest(), b.getNorthEast()); }
+  if (!lb && state.aoiRect && map.hasLayer(state.aoiRect)) lb = state.aoiRect.getBounds();
+  return lb;
+}
+/** Width over height of those bounds, measured on the map itself (Web Mercator pixels). */
+function boundsAspect(map, lb) {
+  const crs = map.options.crs, nw = crs.latLngToPoint(lb.getNorthWest(), 0), se = crs.latLngToPoint(lb.getSouthEast(), 0);
+  return Math.max(1e-6, se.x - nw.x) / Math.max(1e-6, se.y - nw.y);
+}
+
 const flatRings = (ll) => (ll.length && ll[0] && ll[0].lat !== undefined ? [ll] : ll.flatMap(flatRings));
 
 async function renderMap(ctx, W, H, dpi, onProgress) {
   const { map, state } = ctx;
   const size = map.getSize();
   if (!size.x || !size.y) throw new Error('The map is not visible right now. Show the map and try again.');
-  const scale = Math.min(W / size.x, H / size.y);          // print pixels per screen pixel
-  const zp = map.getZoom() + Math.log2(scale);              // fractional zoom of the print
   const crs = map.options.crs;
-  const center = crs.latLngToPoint(map.getCenter(), zp);
+  const all = Object.values(map._layers);
+
+  // Frame the sheet on the active layers so they fill at least 80% of the map area. Without an analysis the
+  // sheet simply shows what is on screen.
+  const lb = activeBounds(map, state);
+  let zp, centerLL, cropped = false;
+  if (lb) {
+    const nw0 = crs.latLngToPoint(lb.getNorthWest(), 0), se0 = crs.latLngToPoint(lb.getSouthEast(), 0);
+    const bw0 = Math.max(1e-6, se0.x - nw0.x), bh0 = Math.max(1e-6, se0.y - nw0.y);
+    const zFit = Math.log2(Math.min(W / bw0, H / bh0) * 0.97);                       // whole area inside the frame
+    const zCover = 0.5 * Math.log2((0.8 * W * H) / (bw0 * bh0));                     // area just reaches 80% of the frame
+    zp = Math.max(zFit, zCover);
+    cropped = zCover > zFit + 1e-6;                                                  // odd shapes: the long edges run off the sheet
+    centerLL = lb.getCenter();
+  } else {
+    zp = map.getZoom() + Math.log2(Math.min(W / size.x, H / size.y));
+    centerLL = map.getCenter();
+  }
+  const scale = Math.min(2 ** (zp - map.getZoom()), (W / size.x) * 1.2);             // print pixels per screen pixel, for line weights
+  const center = crs.latLngToPoint(centerLL, zp);
   const tlx = center.x - W / 2, tly = center.y - H / 2;
   const P = (ll) => { const p = crs.latLngToPoint(ll, zp); return [p.x - tlx, p.y - tly]; };
   const k = scale * 0.85;                                    // line widths and symbols, in print pixels
@@ -165,7 +196,6 @@ async function renderMap(ctx, W, H, dpi, onProgress) {
   const c = canvas.getContext('2d');
   c.fillStyle = '#eef0f2'; c.fillRect(0, 0, W, H);
 
-  const all = Object.values(map._layers);
   const tiles = PRINT_BASE;
   let done = 0, total = 1;
   total = Math.max(1, tiles.length * 40);
@@ -198,7 +228,10 @@ async function renderMap(ctx, W, H, dpi, onProgress) {
   // Vectors: paths first, then points, so symbols sit on top of lines like they do on screen.
   const paths = all.filter((l) => l instanceof L.Polyline && !(l instanceof L.CircleMarker));
   for (const l of paths) {
-    const o = l.options;
+    const o0 = l.options;
+    const isStream = o0.color === '#0b3d91';
+    // Rivers are drawn finer and a little softer on paper, so the flood colours carry the sheet.
+    const o = isStream ? { ...o0, weight: (o0.weight ?? 3) * 0.6, opacity: 0.7 } : o0;
     if (l === state.aoiRect) seen.aoi = true;
     else if (o.color === '#0b3d91') seen.streams = true;
     else if (o.color === '#248a3d') seen.route = true;
@@ -240,7 +273,7 @@ async function renderMap(ctx, W, H, dpi, onProgress) {
       c.strokeText(label, x + r + 3 * k, y + 4 * k); c.fillStyle = '#7a1208'; c.fillText(label, x + r + 3 * k, y + 4 * k);
     }
   }
-  return { canvas, zp, scale, crs, tlx, tly, seen, tiles, mpp: mpp(map.getCenter().lat), center: map.getCenter() };
+  return { canvas, zp, scale, crs, tlx, tly, seen, tiles, cropped, mpp: mpp(centerLL.lat), center: centerLL };
 }
 
 /** A small context map: the same base tiles, zoomed far out, with a box showing where the print is. */
@@ -270,7 +303,7 @@ async function renderInset(ctx, view, W, H) {
 // ---------- The sheet ----------
 function sheet(doc, ctx, view, mapCanvas, inset, opts) {
   const PW = 420, PH = 297;
-  const { frame, panel, dpi } = opts;
+  const { frame, panel, dpi, region } = opts;
   const mmPerPx = 25.4 / dpi;
   const title = ascii(ctx.areaName() || 'Flood exposure map');
   const now = new Date();
@@ -285,23 +318,17 @@ function sheet(doc, ctx, view, mapCanvas, inset, opts) {
   doc.setDrawColor(...INK); doc.setLineWidth(0.9); doc.rect(6, 6, PW - 12, PH - 12);
   doc.setLineWidth(0.25); doc.rect(7.8, 7.8, PW - 15.6, PH - 15.6);
 
-  // Title block, ruled like a map sheet: name and subtitle on the left, scale and date boxes on the right.
+  // Title block: kept minimal. The place name, one quiet line under it, and the scale and date at the right.
   doc.setTextColor(...INK);
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setCharSpace(1.6);
-  doc.text('FLOOD DEPTH  |  QUICK MAP', 20, 15.2); doc.setCharSpace(0);
-  doc.setFontSize(27); doc.text(title.length > 38 ? `${title.slice(0, 36)}...` : title, 20, 27);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(...GREY);
-  doc.text('Terrain-based flood exposure guide. Not an official warning.', 20, 32.4);
-  doc.setDrawColor(...INK); doc.setLineWidth(0.5); doc.line(20, 34.2, frame.x + frame.w, 34.2);
-  // Right side boxes
-  const bx = panel.x, bw = panel.w;
-  doc.setLineWidth(0.3); doc.setDrawColor(...INK);
-  doc.rect(bx, 12, bw, 20);
-  doc.line(bx + bw / 2, 12, bx + bw / 2, 32); doc.line(bx, 19, bx + bw, 19);
-  doc.setFontSize(6.5); doc.setTextColor(...GREY); doc.text('SCALE', bx + 2, 16.6); doc.text('PRINTED', bx + bw / 2 + 2, 16.6);
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...INK);
-  doc.text(`1 : ${ratio.toLocaleString('en-GB')}`, bx + 2, 27.6); doc.setFontSize(10);
-  doc.text(dateTxt, bx + bw / 2 + 2, 27.6);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(17);
+  doc.text(title.length > 46 ? `${title.slice(0, 44)}...` : title, 20, 19);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...GREY);
+  doc.text('Flood exposure guide. Not an official warning.', 20, 24.2);
+  doc.setFontSize(8); doc.setTextColor(...INK);
+  doc.text(`1 : ${ratio.toLocaleString('en-GB')}`, panel.x + panel.w, 19, { align: 'right' });
+  doc.setFontSize(7.5); doc.setTextColor(...GREY);
+  doc.text(dateTxt, panel.x + panel.w, 24.2, { align: 'right' });
+  doc.setDrawColor(...RULE); doc.setLineWidth(0.25); doc.line(20, 27.4, panel.x + panel.w, 27.4);
 
   // The map, with a hairline frame.
   doc.addImage(mapCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', frame.x, frame.y, frame.w, frame.h, undefined, 'FAST');
@@ -337,8 +364,8 @@ function sheet(doc, ctx, view, mapCanvas, inset, opts) {
   });
 
   // ---- Right-hand panel ----
-  let y = frame.y;
-  const px = panel.x, pw = panel.w, bottom = frame.y + frame.h;
+  let y = region.y;
+  const px = panel.x, pw = panel.w, bottom = region.y + region.h;
   const head = (txt) => {
     doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...INK); doc.setCharSpace(0.9);
     doc.text(txt.toUpperCase(), px, y + 3.6); doc.setCharSpace(0);
@@ -450,7 +477,7 @@ function sheet(doc, ctx, view, mapCanvas, inset, opts) {
 
   // Footer line under the frame
   doc.setFont('helvetica', 'normal'); doc.setFontSize(6.8); doc.setTextColor(...GREY);
-  doc.text(`Made with Flood Depth  |  ${location.hostname || 'flood depth'}  |  ${dateTxt}`, 20, PH - 11.2);
+  doc.text(`Made with Flood Depth  |  ${location.hostname || 'flood depth'}  |  ${dateTxt}${view.cropped ? '  |  The analysis area is larger than the frame at this shape; its outer edges run off the sheet.' : ''}`, 20, PH - 11.2);
 }
 
 // ---------- Entry point ----------
@@ -465,7 +492,15 @@ export function initQuickMap(ctx) {
       const JsPDF = await loadJsPdf();
       const dpi = phone ? 200 : 300;
       const PW = 420, PH = 297;
-      const frame = { x: 22, y: 41, w: 286, h: 238 };
+      // The frame takes the proportions of the active layers, so they fill it in both directions.
+      const region = { x: 22, y: 36, w: 286, h: 243 };
+      let frame = { ...region };
+      const lb = activeBounds(ctx.map, ctx.state);
+      if (lb) {
+        const asp = clamp(boundsAspect(ctx.map, lb), 0.6, 2.2);
+        const fw = asp >= region.w / region.h ? region.w : region.h * asp, fh = asp >= region.w / region.h ? region.w / asp : region.h;
+        frame = { x: region.x + (region.w - fw) / 2, y: region.y + (region.h - fh) / 2, w: fw, h: fh };
+      }
       const panel = { x: 322, w: 84 };
       const W = Math.round((frame.w * dpi) / 25.4), H = Math.round((frame.h * dpi) / 25.4);
       const view = await renderMap(ctx, W, H, dpi, (p) => ctx.toast(`Making your map... ${Math.round(p * 100)}%`, false));
@@ -474,7 +509,7 @@ export function initQuickMap(ctx) {
       let inset = null;
       try { inset = await renderInset(ctx, view, 900, 600); } catch { inset = null; }
       const doc = new JsPDF({ orientation: 'landscape', unit: 'mm', format: 'a3', compress: true });
-      sheet(doc, ctx, view, view.canvas, inset, { frame, panel, dpi, PW, PH });
+      sheet(doc, ctx, view, view.canvas, inset, { frame, panel, dpi, PW, PH, region });
       const name = (ctx.areaName() || 'map').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'map';
       doc.save(`flood-depth-${name}-${new Date().toISOString().slice(0, 10)}.pdf`);
       ctx.toast('Your map is ready: check your downloads.', false, 4500);
