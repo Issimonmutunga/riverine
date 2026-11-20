@@ -1,6 +1,6 @@
 // Quick map: one tap makes a high-resolution A3 PDF of what is on the map, laid out like a printed
 // topographic sheet from East and South-East Asia (Japan's GSI, Korea's NGII, Singapore, China's standard
-// map sheets): a double neatline, a ticked "ruler" frame with degree-minute graticule, a ruled title block,
+// map sheets): a double neatline, a plain thin frame with small pale degree-minute labels, a ruled title block,
 // a legend panel, a bar scale, a locator inset and a plain list of sources. Everything on screen is redrawn
 // onto a large canvas (tiles, flood rasters, rivers, buildings, marks), so the print matches the screen.
 
@@ -306,7 +306,7 @@ function sheet(doc, ctx, view, mapCanvas, inset, opts) {
   // The map, with a hairline frame.
   doc.addImage(mapCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', frame.x, frame.y, frame.w, frame.h, undefined, 'FAST');
 
-  // Graticule: faint lines across the map, and an alternating black/white ruler around the frame.
+  // Frame and coordinate labels: the degree-minute positions of the frame edges.
   const crs = view.crs;
   const toMm = (ll) => { const p = crs.latLngToPoint(ll, view.zp); return [frame.x + (p.x - view.tlx) * mmPerPx, frame.y + (p.y - view.tly) * mmPerPx]; };
   const inv = (mx, my) => crs.pointToLatLng(L.point((mx - frame.x) / mmPerPx + view.tlx, (my - frame.y) / mmPerPx + view.tly), view.zp);
@@ -317,38 +317,23 @@ function sheet(doc, ctx, view, mapCanvas, inset, opts) {
   for (let v = Math.ceil(br.lat / latStep) * latStep; v < tl.lat; v += latStep) lats.push(v);
   const lonX = lons.map((v) => toMm(L.latLng(tl.lat, v))[0]);
   const latY = lats.map((v) => toMm(L.latLng(v, tl.lng))[1]);
-  doc.setDrawColor(70, 76, 84); doc.setLineWidth(0.1); doc.setLineDashPattern([0.6, 1.2], 0);
-  lonX.forEach((x) => doc.line(x, frame.y, x, frame.y + frame.h));
-  latY.forEach((y) => doc.line(frame.x, y, frame.x + frame.w, y));
-  doc.setLineDashPattern([], 0);
-  // Ruler: segments between ticks alternate black and white (the sheet-edge scale used on many Asian topographic maps).
-  const RW = 1.7;
-  const ruler = (edge, stops, from, to) => {
-    const marks = [from, ...stops, to];
-    marks.slice(0, -1).forEach((a, i) => {
-      const b = marks[i + 1];
-      doc.setFillColor(...(i % 2 ? [255, 255, 255] : INK));
-      if (edge === 'top') doc.rect(a, frame.y - RW, b - a, RW, 'FD');
-      if (edge === 'bottom') doc.rect(a, frame.y + frame.h, b - a, RW, 'FD');
-      if (edge === 'left') doc.rect(frame.x - RW, a, RW, b - a, 'FD');
-      if (edge === 'right') doc.rect(frame.x + frame.w, a, RW, b - a, 'FD');
-    });
-  };
-  doc.setDrawColor(...INK); doc.setLineWidth(0.2);
-  ruler('top', lonX, frame.x, frame.x + frame.w); ruler('bottom', lonX, frame.x, frame.x + frame.w);
-  ruler('left', latY, frame.y, frame.y + frame.h); ruler('right', latY, frame.y, frame.y + frame.h);
-  doc.setLineWidth(0.5); doc.setDrawColor(...INK); doc.rect(frame.x, frame.y, frame.w, frame.h);
-  // Coordinate labels.
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(...INK);
+  // A plain thin frame. Coordinates are only small, pale labels with a tiny tick each: present for anyone who
+  // needs them, quiet for everyone else (no grid lines across the map, no striped ruler).
+  const RW = 1.4;
+  doc.setDrawColor(...INK); doc.setLineWidth(0.35); doc.rect(frame.x, frame.y, frame.w, frame.h);
+  doc.setDrawColor(...RULE); doc.setLineWidth(0.15);
+  lonX.forEach((x) => { doc.line(x, frame.y - RW, x, frame.y); doc.line(x, frame.y + frame.h, x, frame.y + frame.h + RW); });
+  latY.forEach((y) => { doc.line(frame.x - RW, y, frame.x, y); doc.line(frame.x + frame.w, y, frame.x + frame.w + RW, y); });
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(5.6); doc.setTextColor(...RULE);
   lons.forEach((v, i) => {
     const x = lonX[i], t = dms(v, lonStep, 'lon');
-    doc.text(t, x, frame.y - RW - 1.1, { align: 'center' });
-    doc.text(t, x, frame.y + frame.h + RW + 3.3, { align: 'center' });
+    doc.text(t, x, frame.y - RW - 0.9, { align: 'center' });
+    doc.text(t, x, frame.y + frame.h + RW + 2.4, { align: 'center' });
   });
   lats.forEach((v, i) => {
     const y = latY[i], t = dms(v, latStep, 'lat');
-    doc.text(t, frame.x - RW - 1.2, y + 0.9, { align: 'right' });
-    doc.text(t, frame.x + frame.w + RW + 1.2, y + 0.9, { align: 'left' });
+    doc.text(t, frame.x - RW - 0.9, y + 0.7, { align: 'right' });
+    doc.text(t, frame.x + frame.w + RW + 0.9, y + 0.7, { align: 'left' });
   });
 
   // ---- Right-hand panel ----
