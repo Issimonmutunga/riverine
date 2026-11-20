@@ -15,6 +15,7 @@ import { initLanguage } from './features/language.js';
 import { initChecklist } from './features/checklist.js';
 import { initTrust } from './features/trust.js';
 import { initContact } from './features/contact.js';
+import { initQuickMap } from './features/quickmap.js';
 import { initDataHub } from './datahub.js';
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -2309,6 +2310,7 @@ initLanguage();
 initChecklist(ctx);
 initTrust(ctx);
 initContact(ctx);
+initQuickMap(ctx);
 
 // Data in and out, in the main panel: sharper DEMs, survey requests, sharing and the dataset catalogue.
 initDataHub(ctx);
@@ -2332,7 +2334,8 @@ tabbar.addEventListener('click', (e) => {
     const paneOpen = !newsPop.hidden || !tipsPop.hidden || anyToolOpen() || !$('#toolTray').hidden;
     closePanes();
     setSheet(paneOpen || getSheet() === 'peek' ? 'full' : 'peek');
-  } else if (id === 'news') toggleNews();
+  } else if (id === 'print') ctx.quickMap();
+  else if (id === 'news') toggleNews();
   else if (id === 'tips') toggleTips();
   else if (id === 'share') toggleTool('share');
   else if (id === 'more') {
